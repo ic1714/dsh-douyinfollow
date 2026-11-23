@@ -23,7 +23,7 @@
     "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
   },
   "keywords": [
     "dsh",

@@ -1,4 +1,4 @@
 node_modules/
-dist/
 *.tgz
 *.tmp
+# dist/ 构建产物刻意提交进仓库：github: / ZIP 安装的用户无需编译

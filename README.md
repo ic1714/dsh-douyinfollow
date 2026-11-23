@@ -41,15 +41,24 @@
 
 前置：Node ≥ 22；DSH ≥ 0.2（本插件按 `0.2.2-rc.5` 开发，已在桌面端 `0.2.2-rc.1` 实测加载）；Windows 默认复用系统 Edge（`browserChannel` 可改 chrome / chromium）。
 
+仓库已直接提交构建产物（`dist/`），**以下所有安装方式都无需编译、无需安装开发依赖**。
+
 **官方桌面端（Electron）必须走 GUI 安装**：desktop profile 由 Electron 独占管理，CLI 的 `dsh plugin --profile desktop add …` 会被拒绝（`profile "desktop" is managed exclusively by the Electron application`）。
 
-1. 打开 DSH 桌面端 → 左栏「插件」→「+ 添加插件」。
-2. 粘贴本插件目录的绝对路径（或预构建 tarball 路径）→「安装」→「立即启用」→ 确认开关为 ON。
-3. 重启桌面端使客户端 bundle 进入启动组合。
+1. 获取插件（任选其一）：
+   - 在本仓库 GitHub 页面点 Code → Download ZIP，解压，记住含 `package.json` 的那层文件夹路径；
+   - 或下载 Releases 里的 `.tgz` 安装包；
+   - 或开发者直接 clone 本仓库。
+2. 打开 DSH 桌面端 → 左栏「插件」→「+ 添加插件」。
+3. 粘贴插件目录的绝对路径（或 `.tgz` 路径）→「安装」→「立即启用」→ 确认开关为 ON。
+4. 重启桌面端使客户端 bundle 进入启动组合。
 
-**Web profile** 仍可用 CLI：
+**Web profile** 可用 CLI：
 
 ```bash
+# 直接从 GitHub 仓库安装（无需手动下载）
+dsh plugin --profile web add github:wjq1714/dsh-douyin-radar
+# 或本地目录（ZIP 解压 / clone 后的路径）
 dsh plugin --profile web add /path/to/dsh-douyin-radar
 # 或预构建 tarball
 dsh plugin --profile web add ./dsh-douyin-radar-0.1.0.tgz
@@ -126,11 +135,16 @@ dsh plugin --profile web add ./dsh-douyin-radar-0.1.0.tgz
 
 ## 开发
 
+普通用户无需本节：仓库已含构建产物，安装即用。修改源码才需要：
+
 ```bash
-npm install
-npm run build        # tsc 宿主 + esbuild 客户端 lazy-CJS bundle
-node scripts/smoke.mjs   # 确定性逻辑自测
+pnpm install         # 安装开发依赖（DSH 框架、TypeScript、esbuild 等）
+pnpm build           # tsc 宿主 + esbuild 客户端 lazy-CJS bundle，输出到 dist/
+pnpm smoke           # 确定性逻辑自测
+pnpm pack            # 生成可安装的 .tgz（打包前自动重新构建）
 ```
+
+修改 `src/` 后请执行 `pnpm build`，并把更新后的 `dist/` 随源码一并提交，保证 github: / ZIP 安装的用户直接拿到新版本。
 
 目录：`src/index.ts` 入口；`config/store/idle/browser/ocr/engine/tools/routes` 宿主各层；`src/client/index.ts` 侧栏面板；`cordis.patch.yml` 组合补丁；`scripts/build-client.mjs` 客户端打包。
 
