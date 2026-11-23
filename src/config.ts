@@ -35,7 +35,7 @@ export const Config = Schema.object({
 })
 
 /** 运行中读取的配置快照（每次操作开始时取一次）。 */
-export interface RadarConfig {
+export interface FollowConfig {
   enabled: boolean
   keywords: string[]
   intervalMinutes: number
@@ -51,7 +51,7 @@ export interface RadarConfig {
   retentionCards: number
 }
 
-export function readConfig(config: Config): RadarConfig {
+export function readConfig(config: Config): FollowConfig {
   return {
     enabled: config.enabled.get() ?? true,
     keywords: (config.keywords.get() ?? []).map(k => k.trim()).filter(Boolean),

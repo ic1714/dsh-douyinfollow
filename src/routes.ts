@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type { RadarEngine } from './engine.js'
+import type { FollowEngine } from './engine.js'
 import { sanitizePrefs } from './store.js'
 
-export const STATE_PATH = '/plugin-data/dsh-douyin-radar/state'
-export const ACTION_PATH = '/plugin-data/dsh-douyin-radar/action'
+export const STATE_PATH = '/plugin-data/douyinfollow/state'
+export const ACTION_PATH = '/plugin-data/douyinfollow/action'
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
@@ -30,7 +30,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown> |
  * 面板数据通道：沿用生态惯例 /plugin-data/<pkg>/*，客户端 fetch 轮询 + POST 动作。
  * 仅接受 loopback 来源（DSH web 服务默认绑定 loopback）。
  */
-export function registerRoutes(ctx: Context, engine: RadarEngine): () => void {
+export function registerRoutes(ctx: Context, engine: FollowEngine): () => void {
   const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
     const addr = req.socket?.remoteAddress ?? ''
     if (!LOOPBACK.has(addr)) {
@@ -80,6 +80,9 @@ export function registerRoutes(ctx: Context, engine: RadarEngine): () => void {
             return
           case 'human':
             sendJson(res, 200, engine.startHumanCheck())
+            return
+          case 'humanDone':
+            sendJson(res, 200, engine.confirmHumanCheck())
             return
           case 'refreshLogin':
             sendJson(res, 200, { loggedIn: await engine.refreshLogin() })

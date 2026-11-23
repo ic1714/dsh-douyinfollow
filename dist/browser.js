@@ -36,6 +36,7 @@ export class DouyinBrowser {
     loginError;
     checkingHuman = false;
     humanError;
+    humanConfirm = false;
     foregroundHwnd = 0;
     constructor(opts) {
         this.opts = opts;
@@ -98,7 +99,7 @@ export class DouyinBrowser {
         if (process.platform !== 'win32')
             return;
         try {
-            await ps(`Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`);
+            await ps(`Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*douyinfollow*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`);
         }
         catch { /* 清理失败不阻塞启动 */ }
     }
@@ -128,7 +129,7 @@ export class DouyinBrowser {
             const script = [
                 `Add-Type -Name W -Namespace N -MemberDefinition 'public delegate bool EnumWindowsProc(System.IntPtr h, System.IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, System.IntPtr l); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint p); [DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out R r); public struct R { public int L; public int T; public int R2; public int B; } [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int cmd);'`,
                 `Add-Type -AssemblyName System.Windows.Forms`,
-                `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' }).ProcessId )`,
+                `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*douyinfollow*' }).ProcessId )`,
                 `$global:hw = [System.IntPtr]::Zero`,
                 `$cb = [N.W+EnumWindowsProc]{ param($h,$l) $p = 0; [N.W]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null; if ($global:rp -contains $p -and $global:hw -eq [System.IntPtr]::Zero -and [N.W]::IsWindowVisible($h)) { $r = New-Object N.W+R; [N.W]::GetWindowRect($h, [ref]$r) | Out-Null; if (($r.R2 - $r.L) -ge 200 -or ($r.L -lt -1000)) { $global:hw = $h } }; return $true }`,
                 `[N.W]::EnumWindows($cb, [System.IntPtr]::Zero) | Out-Null`,
@@ -148,7 +149,7 @@ export class DouyinBrowser {
             const script = [
                 `Add-Type -Name W -Namespace N -MemberDefinition 'public delegate bool EnumWindowsProc(System.IntPtr h, System.IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, System.IntPtr l); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint p); [DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out R r); public struct R { public int L; public int T; public int R2; public int B; } [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int cmd);'`,
                 `Add-Type -AssemblyName System.Windows.Forms`,
-                `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' }).ProcessId )`,
+                `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*douyinfollow*' }).ProcessId )`,
                 `$global:hw = [System.IntPtr]::Zero`,
                 `$cb = [N.W+EnumWindowsProc]{ param($h,$l) $p = 0; [N.W]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null; if ($global:rp -contains $p -and $global:hw -eq [System.IntPtr]::Zero -and [N.W]::IsWindowVisible($h)) { $r = New-Object N.W+R; [N.W]::GetWindowRect($h, [ref]$r) | Out-Null; if (($r.R2 - $r.L) -ge 200 -or ($r.L -lt -1000)) { $global:hw = $h } }; return $true }`,
                 `[N.W]::EnumWindows($cb, [System.IntPtr]::Zero) | Out-Null`,
@@ -178,16 +179,32 @@ export class DouyinBrowser {
         }
         catch { /* 摆位失败不影响功能 */ }
     }
-    /** 风控识别：标题 + 页面文字 + captcha iframe，覆盖中间页与内嵌滑块两种变体。 */
+    /** 风控识别：只认「可见的」验证码 UI；已能展示搜索结果/实质内容的页面视为已通过。
+     *  旧版把 DOM 里残留的隐藏 captcha iframe/文案也当命中，导致用户过完验证后仍被误判、面板空等到超时。 */
     async captchaHit(page) {
-        const t = await page.title().catch(() => '');
-        if (/验证码|captcha|verify/i.test(t))
+        if (/verify\.douyin\.com|\/verify\/|\/captcha/i.test(page.url()))
             return true;
         return await page.evaluate(() => {
+            const visible = (el) => {
+                const r = el.getBoundingClientRect();
+                if (r.width < 8 || r.height < 8)
+                    return false;
+                const cs = getComputedStyle(el);
+                return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+            };
+            // 可见的验证码 iframe（隐藏残留不算）
+            if (Array.from(document.querySelectorAll('iframe')).some(f => /captcha|verify/i.test(f.src || '') && visible(f)))
+                return true;
+            // 可见的验证码容器（抖音 secsdk-captcha 等；不泛匹配 verify/slider，避免误伤作者认证标识/进度条）
+            if (Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="secsdk"], [id*="secsdk"]')).some(visible))
+                return true;
+            // 已能看到搜索结果：定义上已过验证，忽略任何残留文案/标题
+            if (document.querySelectorAll('a[href*="/video/"]').length > 0)
+                return false;
             const txt = (document.body?.innerText || '').slice(0, 3000);
             if (/验证码|形状相同|滑块|拖动|captcha/i.test(txt))
                 return true;
-            return Array.from(document.querySelectorAll('iframe')).some(f => /captcha|verify/i.test(f.src || ''));
+            return /验证码|captcha|verify/i.test(document.title);
         }).catch(() => false);
     }
     async pace() {
@@ -240,7 +257,7 @@ export class DouyinBrowser {
             try {
                 const { mkdtemp, copyFile } = await import('node:fs/promises');
                 const { tmpdir } = await import('node:os');
-                const dir = await mkdtemp(join(tmpdir(), 'radar-cookies-'));
+                const dir = await mkdtemp(join(tmpdir(), 'follow-cookies-'));
                 for (const suffix of ['', '-wal', '-shm']) {
                     await copyFile(file + suffix, join(dir, 'Cookies' + suffix)).catch(() => undefined);
                 }
@@ -326,6 +343,7 @@ export class DouyinBrowser {
             return this.humanWaiter;
         this.checkingHuman = true;
         this.humanError = undefined;
+        this.humanConfirm = false;
         this.humanWaiter = (async () => {
             let ok = false;
             try {
@@ -335,25 +353,44 @@ export class DouyinBrowser {
                 // 用户主动过验证：恢复最小化并置前台居中，方便完成滑块/点选。
                 await this.show();
                 const deadline = Date.now() + this.opts.loginTimeoutSeconds * 1000;
+                const startedAt = Date.now();
                 let stable = 0;
+                let lastReload = 0;
+                let reloads = 0;
+                let homeTried = false;
                 while (Date.now() < deadline) {
-                    // 信任恢复判定：无验证码 +（有视频链接 或 已登录且页面有实质内容）。
-                    // 首页/恢复标签页没有 /video/ 链接，只认搜索结果会空等到超时。
-                    if (!(await this.captchaHit(page))) {
-                        const n = await page.locator('a[href*="/video/"]').count().catch(() => 0);
-                        const bodyLen = await page.evaluate(() => (document.body?.innerText || '').length).catch(() => 0);
-                        const logged = await this.loggedInCookies(ctx).catch(() => false);
-                        if (n > 0 || (logged && bodyLen > 200))
-                            stable += 1;
-                        else
-                            stable = 0;
-                        if (stable >= 2) {
-                            ok = true;
-                            return true;
+                    // 信任恢复判定：扫描所有标签（验证可能在弹窗标签完成），任一标签无可见验证码
+                    // 且（有视频链接 或 已登录且页面有实质内容）即累计；用户点「我已完成验证」后放宽为无可见验证码即可。
+                    const logged = await this.loggedInCookies(ctx).catch(() => false);
+                    let clean = false;
+                    for (const p of ctx.pages()) {
+                        if (p.isClosed() || await this.captchaHit(p))
+                            continue;
+                        const n = await p.locator('a[href*="/video/"]').count().catch(() => 0);
+                        const bodyLen = await p.evaluate(() => (document.body?.innerText || '').length).catch(() => 0);
+                        if (n > 0 || (logged && bodyLen > 200) || (this.humanConfirm && bodyLen > 50)) {
+                            clean = true;
+                            break;
+                        }
+                        // 502/空页等错误落地页：信任 cookie 已落盘但边缘仍拒旧响应，限频重载让信任态生效。
+                        if (bodyLen < 50 && reloads < 8 && Date.now() - lastReload > 15000) {
+                            lastReload = Date.now();
+                            reloads += 1;
+                            await p.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
                         }
                     }
-                    else {
+                    // 搜索页持续报错时回首页确认信任态（首页有实质内容即视为过验证成功）。
+                    if (!clean && !homeTried && Date.now() - startedAt > 20000 && !(await this.captchaHit(page))) {
+                        homeTried = true;
+                        await page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
+                    }
+                    if (clean)
+                        stable += 1;
+                    else
                         stable = 0;
+                    if (stable >= 2 || (this.humanConfirm && clean)) {
+                        ok = true;
+                        return true;
                     }
                     await sleep(2000);
                 }
@@ -366,6 +403,7 @@ export class DouyinBrowser {
             }
             finally {
                 this.checkingHuman = false;
+                this.humanConfirm = false;
                 // 成功则保留会话供巡查复用（风控信任态绑定会话）；失败才关窗。
                 if (ok) {
                     await this.quietBounds();
@@ -378,6 +416,11 @@ export class DouyinBrowser {
         })();
         return this.humanWaiter;
     }
+    /** 用户在网页端完成验证后手动确认：下一轮轮询立即放宽判定，避免自动检测漏判时面板卡死。 */
+    confirmHuman() {
+        if (this.checkingHuman)
+            this.humanConfirm = true;
+    }
     /** 搜索话题视频，返回去重前的候选列表。 */
     async search(keyword, limit) {
         const ctx = await this.ensure(this.opts.headlessPatrol, !this.opts.headlessPatrol);
@@ -387,6 +430,10 @@ export class DouyinBrowser {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             if (await this.captchaHit(page)) {
                 throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试');
+            }
+            const errPage = await page.evaluate(() => ({ t: document.title, len: (document.body?.innerText || '').length })).catch(() => ({ t: '', len: 0 }));
+            if (errPage.len < 50 && /502|403|Bad Gateway|Forbidden|错误/i.test(errPage.t)) {
+                throw new Error('抖音返回 502/403（风控未解除）：点面板「过验证」完成一次后重试');
             }
             await page.waitForSelector('a[href*="/video/"]', { timeout: 30000 }).catch(() => undefined);
             await this.pace();

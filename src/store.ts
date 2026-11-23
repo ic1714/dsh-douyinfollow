@@ -1,14 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { emptyState, type Card, type Lead, type PatrolRecord, type RadarPrefs, type RadarState } from './types.js'
+import { emptyState, type Card, type Lead, type PatrolRecord, type FollowPrefs, type FollowState } from './types.js'
 
 const SEEN_CAP = 5000
 const LEAD_CAP = 400
 const PATROL_CAP = 60
 
 /** 偏好清洗：关键词去空去重限长，间隔夹到合法区间。 */
-export function sanitizePrefs(raw: unknown): RadarPrefs {
-  const out: RadarPrefs = {}
+export function sanitizePrefs(raw: unknown): FollowPrefs {
+  const out: FollowPrefs = {}
   if (!raw || typeof raw !== 'object') return out
   const p = raw as Record<string, unknown>
   if (typeof p.enabled === 'boolean') out.enabled = p.enabled
@@ -25,9 +25,9 @@ export function sanitizePrefs(raw: unknown): RadarPrefs {
  * 本地 JSON 存储：已看视频去重、线索、卡片、巡查记录。
  * 写入走 tmp + rename 原子替换，避免崩溃留下半截文件。
  */
-export class RadarStore {
+export class FollowStore {
   readonly file: string
-  state: RadarState = emptyState()
+  state: FollowState = emptyState()
   private seenSet = new Set<string>()
   private saving: Promise<void> = Promise.resolve()
 
@@ -39,7 +39,7 @@ export class RadarStore {
     await mkdir(this.dir, { recursive: true })
     try {
       const raw = await readFile(this.file, 'utf8')
-      const parsed = JSON.parse(raw) as Partial<RadarState>
+      const parsed = JSON.parse(raw) as Partial<FollowState>
       this.state = {
         seen: Array.isArray(parsed.seen) ? parsed.seen.filter(x => typeof x === 'string') : [],
         leads: Array.isArray(parsed.leads) ? parsed.leads : [],

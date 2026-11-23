@@ -46,7 +46,7 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     retentionCards: Schema<number, number, "volatile-defined">;
 }>>, "plain">;
 /** 运行中读取的配置快照（每次操作开始时取一次）。 */
-export interface RadarConfig {
+export interface FollowConfig {
     enabled: boolean;
     keywords: string[];
     intervalMinutes: number;
@@ -61,4 +61,4 @@ export interface RadarConfig {
     loginTimeoutSeconds: number;
     retentionCards: number;
 }
-export declare function readConfig(config: Config): RadarConfig;
+export declare function readConfig(config: Config): FollowConfig;

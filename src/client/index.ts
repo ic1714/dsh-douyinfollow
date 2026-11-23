@@ -1,11 +1,11 @@
 import * as React from 'react'
-import type { Card, OverallStatus, RadarSnapshot } from '../types.js'
+import type { Card, OverallStatus, FollowSnapshot } from '../types.js'
 import { FACT_LABEL, OVERALL_LABEL } from '../types.js'
 
 const h = React.createElement
-const PKG = 'dsh-douyin-radar'
-const STATE = '/plugin-data/dsh-douyin-radar/state'
-const ACTION = '/plugin-data/dsh-douyin-radar/action'
+const PKG = 'douyinfollow'
+const STATE = '/plugin-data/douyinfollow/state'
+const ACTION = '/plugin-data/douyinfollow/action'
 
 const BADGE_COLOR: Record<OverallStatus, string> = {
   verified: '#2ea043',
@@ -102,8 +102,8 @@ function CardView({ card, open, onToggle, onAct }: {
   )
 }
 
-function RadarPanel() {
-  const [snap, setSnap] = React.useState<RadarSnapshot | null>(null)
+function FollowPanel() {
+  const [snap, setSnap] = React.useState<FollowSnapshot | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<Record<string, boolean>>({})
   const [showArchived, setShowArchived] = React.useState(false)
@@ -125,7 +125,7 @@ function RadarPanel() {
     try {
       const r = await fetch(STATE, { cache: 'no-store' })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      setSnap(await r.json() as RadarSnapshot)
+      setSnap(await r.json() as FollowSnapshot)
       setErr(null)
     } catch (e) {
       setErr(String((e as Error)?.message ?? e))
@@ -161,14 +161,15 @@ function RadarPanel() {
   const unread = snap.cards.filter(c => !c.read && !c.archived).length
   return h('div', { style: box },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-      h('strong', { style: { fontSize: 14 } }, '抖音进展雷达'),
+      h('strong', { style: { fontSize: 14 } }, '抖音跟进'),
       unread > 0 && h('span', { style: { ...chip, background: '#58a6ff22', color: '#58a6ff' } }, `${unread} 未读`),
       h('span', { style: { marginLeft: 'auto', opacity: 0.6, fontSize: 11 } }, snap.patrol.running ? '巡查中…' : snap.idle.idle ? '空闲' : '忙'),
     ),
     h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-      h('button', { type: 'button', style: btn, disabled: busy, onClick: () => void act('patrol') }, '立即巡查'),
+      h('button', { type: 'button', style: btn, disabled: busy, onClick: () => void act('patrol') }, '立即跟进'),
       !snap.login.loggedIn && h('button', { type: 'button', style: btn, disabled: busy || snap.login.loggingIn, onClick: () => void act('login') }, snap.login.loggingIn ? '等待扫码…' : '扫码登录'),
       h('button', { type: 'button', style: btn, disabled: busy || snap.human.checking, onClick: () => void act('human') }, snap.human.checking ? '验证中…' : '过验证'),
+      snap.human.checking && h('button', { type: 'button', style: btn, disabled: busy, onClick: () => void act('humanDone') }, '我已完成验证'),
       h('button', { type: 'button', style: btn, disabled: busy, onClick: () => void act('readAll') }, '全部已读'),
       h('button', { type: 'button', style: btn, onClick: () => setShowArchived(v => !v) }, showArchived ? '隐藏归档' : '显示归档'),
       h('button', { type: 'button', style: btn, onClick: () => setShowCfg(v => !v) }, showCfg ? '收起设置' : '关键词设置'),
@@ -196,7 +197,7 @@ function RadarPanel() {
     ),
     snap.login.error && h('div', { style: { color: '#f85149', fontSize: 12 } }, snap.login.error),
     snap.human.error && h('div', { style: { color: '#f85149', fontSize: 12 } }, snap.human.error),
-    snap.human.checking && h('div', { style: { color: '#d29922', fontSize: 12 } }, '已打开验证窗口：如出现滑块/点选请完成一次；若页面已能正常浏览则无需操作。判定通过后窗口自动缩到右下角并保留会话供巡查复用。'),
+    snap.human.checking && h('div', { style: { color: '#d29922', fontSize: 12 } }, '已打开验证窗口：如出现滑块/点选请完成一次；完成后自动判定，也可点「我已完成验证」立即复核。判定通过后窗口自动缩到右下角并保留会话供巡查复用。'),
     !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? '') && h('div', { style: { color: '#d29922', fontSize: 12 } }, '上次巡查被抖音风控拦截：点「过验证」人工完成一次，之后自动巡查通常即可恢复。'),
     err && h('div', { style: { color: '#f85149', fontSize: 12 } }, `连接异常：${err}`),
     snap.leadsPending > 0 && h('div', { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} 条线索正在核实编排中…`),
@@ -224,17 +225,17 @@ export const inject = ['slots', 'sidebarRightTabs']
 export function apply(ctx: any): void {
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: PKG,
-    kind: 'douyin-radar',
-    title: () => '抖音进展雷达',
+    kind: 'douyin-follow',
+    title: () => '抖音跟进',
     guide: [{
       id: PKG,
-      kind: 'douyin-radar',
-      title: () => '抖音进展雷达',
-      description: () => '空闲巡查抖音话题视频，权威来源核实后推送进展卡片',
+      kind: 'douyin-follow',
+      title: () => '抖音跟进',
+      description: () => '跟进选定内容的实时进展',
     }],
-  }), 'radar tab type')
+  }), 'follow tab type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: PKG },
-    RadarPanel,
-  )), 'radar panel body')
+    FollowPanel,
+  )), 'follow panel body')
 }

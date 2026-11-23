@@ -1,4 +1,4 @@
-# dsh-douyin-radar · 抖音进展雷达
+# douyinfollow · 抖音跟进
 
 适配 **DeepSeek Harness（DSH）官方桌面端 / Web UI** 的自研插件：DSH 空闲时自动巡查你设置的抖音话题视频，把视频当线索而非结论，提取事实点到 GitHub / 官网 / 官方文档等权威来源交叉核实，再以卡片流形式随时推送到独立侧栏面板。
 
@@ -10,7 +10,7 @@
 | 追踪我设置的内容 | 关键词/话题搜索相关新视频（不盯账号），本地增量去重 |
 | 轻量理解视频 | 标题 + 文案 + 关键帧文字 OCR + 抖音内置 AI 讲解摘要（有则取，无则降级） |
 | 博主说法不可信 | 独立核实会话逐条事实点交叉查证；卡片标注 已核实 / 部分核实 / 与权威来源不符 / 无法核实 + 来源链接；营销话术单独归类 |
-| 随时推送、侧栏卡片 | 右栏自定义 tab「抖音进展雷达」；卡面 = 关键词 + 一句话进展 + 核实徽标，点开展详情；4 秒轮询即时刷新 |
+| 随时推送、侧栏卡片 | 右栏自定义 tab「抖音跟进」；卡面 = 关键词 + 一句话进展 + 核实徽标，点开展详情；4 秒轮询即时刷新 |
 | 只读边界 | 不点赞、不评论、不关注、不发布；路由仅接受 loopback |
 
 ## 工作流
@@ -22,7 +22,7 @@
    → 线索入库（去重）
    → 宿主 Schedule 派发独立后台会话（new_once）
    → 核实员用 web_search / web_fetch 查权威来源
-   → douyin_radar_publish 回写卡片（服务端重算核实结论）
+   → douyin_follow_publish 回写卡片（服务端重算核实结论）
    → 侧栏面板卡片流推送
 ```
 
@@ -32,10 +32,10 @@
 
 - 自动巡查（宿主每 20 秒 tick 一次）需同时满足：`enabled` 开启 + 关键词非空 + 抖音已登录 + 会话空闲（无进行中 agent 轮次，且静默超过 `idleQuietSeconds`）+ 距上次巡查 ≥ `intervalMinutes`。
 - 未登录时低频复查登录态（距上次巡查 ≥ 10 分钟才查），避免每 tick 启浏览器。
-- 手动「立即巡查」/ `douyin_radar_patrol` 绕过空闲与间隔守卫，但仍校验启用、关键词与登录态。
+- 手动「立即跟进」/ `douyin_follow_patrol` 绕过空闲与间隔守卫，但仍校验启用、关键词与登录态。
 - 全屏游戏/视频/工作时**不跳过**自动巡查：窗口置底不激活、焦点归还，后台照跑。
 - 登录/过验证等待期间 tick 与头模式切换让路，不打断用户操作。
-- 推送时机：核实会话 `douyin_radar_publish` 回写即入列，面板 4 秒轮询刷新——随时推送、不等整批结束。
+- 推送时机：核实会话 `douyin_follow_publish` 回写即入列，面板 4 秒轮询刷新——随时推送、不等整批结束。
 
 ## 安装
 
@@ -57,27 +57,27 @@
 
 ```bash
 # 直接从 GitHub 仓库安装（无需手动下载）
-dsh plugin --profile web add github:wjq1714/dsh-douyin-radar
+dsh plugin --profile web add github:ic1714/dsh-douyinfollow
 # 或本地目录（ZIP 解压 / clone 后的路径）
-dsh plugin --profile web add /path/to/dsh-douyin-radar
+dsh plugin --profile web add /path/to/douyinfollow
 # 或预构建 tarball
-dsh plugin --profile web add ./dsh-douyin-radar-0.1.0.tgz
+dsh plugin --profile web add ./douyinfollow-0.2.1.tgz
 ```
 
 ## 首次使用
 
-1. 右栏引导页点「抖音进展雷达」胶囊（或右栏 tab）打开面板 → 点「关键词设置」→ 输入话题关键词（逗号分隔，如 `DeepSeek，开源大模型，Harness`）→「保存设置」。关键词/间隔/自动巡查开关保存在插件数据目录，热生效、跨重启保留。
-2. 点「扫码登录」，在弹出的系统 Edge 窗口中扫码；登录态保存在插件独立 profile，长期有效。也可在对话中说「扫码登录抖音」触发 `douyin_radar_login`。
-3. 之后 DSH 空闲时自动巡查（打游戏/看视频/工作时照跑，窗口置底不抢前台）；也可点「立即巡查」或在对话中调用 `douyin_radar_patrol`。
+1. 右栏引导页点「抖音跟进」胶囊（或右栏 tab）打开面板 → 点「关键词设置」→ 输入话题关键词（逗号分隔，如 `DeepSeek，开源大模型，Harness`）→「保存设置」。关键词/间隔/自动巡查开关保存在插件数据目录，热生效、跨重启保留。
+2. 点「扫码登录」，在弹出的系统 Edge 窗口中扫码；登录态保存在插件独立 profile，长期有效。也可在对话中说「扫码登录抖音」触发 `douyin_follow_login`。
+3. 之后 DSH 空闲时自动巡查（打游戏/看视频/工作时照跑，窗口置底不抢前台）；也可点「立即跟进」或在对话中调用 `douyin_follow_patrol`。
 4. 核实完成的卡片自动入列；点卡片展开事实点、来源链接、营销话术备注与原视频链接。
 
 ## 面板与卡片
 
-- 顶栏：`n 未读` 徽标、立即巡查、扫码登录（未登录时）、过验证、全部已读、显示归档/隐藏归档、关键词设置；状态行显示登录态、关键词 chips、上次巡查结果与下次最早时间、风控/登录提示、「n 条线索正在核实编排中」。
+- 顶栏：`n 未读` 徽标、立即跟进、扫码登录（未登录时）、过验证、全部已读、显示归档/隐藏归档、关键词设置；状态行显示登录态、关键词 chips、上次巡查结果与下次最早时间、风控/登录提示、「n 条线索正在核实编排中」。
 - 卡面：核实徽标（已核实 / 部分核实 / 与权威来源不符 / 无法核实）+ 关键词 chip + 未读蓝点 + 时间 + 一句话进展 + 作者/发布时间；点击展开/收起。
 - 详情：视频概述；事实点列表（每条带状态徽标 + 主张 + 可点击权威来源链接 + 备注）；营销话术（未经证实）单独归类；原视频链接；「标记已读」「归档/取消归档」操作。
 - 归档卡片默认隐藏，「显示归档」切换查看；卡片保留上限 `retentionCards`，超出自动淘汰最旧。
-- 线索侧：待核实线索数在面板提示；模型可用 `douyin_radar_skip` 跳过无关线索、`douyin_radar_verify` 重新派发核实。
+- 线索侧：待核实线索数在面板提示；模型可用 `douyin_follow_skip` 跳过无关线索、`douyin_follow_verify` 重新派发核实。
 
 ## 风控与人工过验证
 
@@ -109,18 +109,18 @@ dsh plugin --profile web add ./dsh-douyin-radar-0.1.0.tgz
 | aiSummaryEnabled | true | 优先取抖音 AI 讲解摘要 |
 | headlessPatrol | false | 有头巡查：窗口自动缩到屏幕右下角 460×360 小窗并置底不激活。无头、屏外、最小化窗口实测均被验证码拦截（信任 cookie 在场也拦），保持 false |
 | browserChannel | msedge | 系统浏览器通道 |
-| dataDir | 空 | 数据目录；留空用 `$DSH_HOME/plugin-data/dsh-douyin-radar` |
+| dataDir | 空 | 数据目录；留空用 `$DSH_HOME/plugin-data/douyinfollow` |
 | loginTimeoutSeconds | 180 | 扫码等待超时 |
 | retentionCards | 200 | 卡片保留上限 |
 
 ## 模型工具
 
-`douyin_radar_status` / `douyin_radar_patrol` / `douyin_radar_leads` / `douyin_radar_publish` / `douyin_radar_skip` / `douyin_radar_cards` / `douyin_radar_login` / `douyin_radar_verify`。核实编排由 Schedule 派发的独立会话执行，提示词内置只读与来源约束。
+`douyin_follow_status` / `douyin_follow_patrol` / `douyin_follow_leads` / `douyin_follow_publish` / `douyin_follow_skip` / `douyin_follow_cards` / `douyin_follow_login` / `douyin_follow_verify`。核实编排由 Schedule 派发的独立会话执行，提示词内置只读与来源约束。
 
 ## 数据与隐私
 
 - `state.json`（已看视频、线索、卡片、巡查记录）与 `browser-profile/`（抖音登录 cookie）全部本地保存，原子写盘。
-- 面板通道 `/plugin-data/dsh-douyin-radar/*` 仅接受 loopback 请求。
+- 面板通道 `/plugin-data/douyinfollow/*` 仅接受 loopback 请求。
 - 抖音 AI 讲解本身标注「仅供参考」，本插件只将其作为线索补充，不作为事实结论。
 
 ## 已知限制与风险
@@ -129,9 +129,9 @@ dsh plugin --profile web add ./dsh-douyin-radar-0.1.0.tgz
 - 抖音风控：无头、屏外、最小化窗口（`visibilityState=hidden` 或窗口不可见）都会被验证码拦截，信任 cookie 在场也拦。默认有头 + 右下角小窗置底 + 低频（建议间隔 ≥ 10 分钟）+ 拟人 pacing + 只读是缓解手段；详见「风控与人工过验证」。
 - OCR 语言模型首次使用时从 CDN 下载并缓存到数据目录；失败时降级为空文本。
 - 核实会话消耗模型配额；线索量由 `maxVideosPerPatrol` 控制。
-- 验证状态：已在真实桌面端（0.2.2-rc.1）端到端 live 验证（2026-11-21）：entry 激活、tab 注册、面板取数与配置写回、扫码登录、风控识别与人工过验证、有头小窗巡查搜索（found=6）、采集（标题/文案/关键帧 OCR）、Schedule 派发独立核实会话、`douyin_radar_publish` 回写 5 张卡片（含 verified / contradicted / unverified 与权威来源链接、营销话术归类）全链路通过；确定性逻辑通过 `scripts/smoke.mjs` 自测。个别视频页仍可能单独命中风控，该条采集降级记录错误、不影响同批其他视频。
+- 验证状态：已在真实桌面端（0.2.2-rc.1）端到端 live 验证（2026-11-21）：entry 激活、tab 注册、面板取数与配置写回、扫码登录、风控识别与人工过验证、有头小窗巡查搜索（found=6）、采集（标题/文案/关键帧 OCR）、Schedule 派发独立核实会话、`douyin_follow_publish` 回写 5 张卡片（含 verified / contradicted / unverified 与权威来源链接、营销话术归类）全链路通过；确定性逻辑通过 `scripts/smoke.mjs` 自测。个别视频页仍可能单独命中风控，该条采集降级记录错误、不影响同批其他视频。
 - 打扰/性能治理验证（2026-11-22）：启动后插件 Edge 进程数 = 0（读盘判定登录态）；巡查期间前台焦点保持在用户应用（不被 Edge 抢走）；「还原页面/意外关闭」崩溃对话框已抑制；最小化窗口经 Win32 恢复后缩角置底。无头/屏外/最小化三种隐藏方式均实测被风控拦截，故保留「有头可见但置底小窗」方案。Edge 崩溃/强杀后风控信任需一次人工过验证恢复。
-- 启动报 `web boot: 1 entry did not activate / dsh-douyin-radar: failed` 时：查看 `%APPDATA%\@deepseek-ai\dsh-desktop\logs\crash-*-web-boot.log` 的 renderer console 段，本插件激活失败会打印 `[radar-apply]` 错误栈；也可在崩溃对话框选「禁用第三方插件、备份 profile patch 并重启」先恢复应用。
+- 启动报 `web boot: 1 entry did not activate / douyinfollow: failed` 时：查看 `%APPDATA%\@deepseek-ai\dsh-desktop\logs\crash-*-web-boot.log` 的 renderer console 段，本插件激活失败会打印 `[follow-apply]` 错误栈；也可在崩溃对话框选「禁用第三方插件、备份 profile patch 并重启」先恢复应用。
 
 ## 开发
 

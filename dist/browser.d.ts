@@ -34,6 +34,7 @@ export declare class DouyinBrowser {
     loginError?: string;
     checkingHuman: boolean;
     humanError?: string;
+    private humanConfirm;
     private foregroundHwnd;
     constructor(opts: BrowserOptions);
     private ensure;
@@ -50,7 +51,8 @@ export declare class DouyinBrowser {
     private restoreFocus;
     /** 把有头窗口缩到屏幕右下角：可见但不挡主窗口（最小化会触发风控/懒渲染停摆）。 */
     private quietBounds;
-    /** 风控识别：标题 + 页面文字 + captcha iframe，覆盖中间页与内嵌滑块两种变体。 */
+    /** 风控识别：只认「可见的」验证码 UI；已能展示搜索结果/实质内容的页面视为已通过。
+     *  旧版把 DOM 里残留的隐藏 captcha iframe/文案也当命中，导致用户过完验证后仍被误判、面板空等到超时。 */
     private captchaHit;
     private pace;
     private loggedInCookies;
@@ -62,6 +64,8 @@ export declare class DouyinBrowser {
     login(): Promise<boolean>;
     /** 风控验证码中间页：开有头窗口请用户人工过一次滑块/点选，信任态落 profile。 */
     humanCheck(url: string): Promise<boolean>;
+    /** 用户在网页端完成验证后手动确认：下一轮轮询立即放宽判定，避免自动检测漏判时面板卡死。 */
+    confirmHuman(): void;
     /** 搜索话题视频，返回去重前的候选列表。 */
     search(keyword: string, limit: number): Promise<SearchResultItem[]>;
     /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次巡查再开就是弹窗打扰。 */

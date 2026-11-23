@@ -24,7 +24,7 @@ export function sanitizePrefs(raw) {
  * 本地 JSON 存储：已看视频去重、线索、卡片、巡查记录。
  * 写入走 tmp + rename 原子替换，避免崩溃留下半截文件。
  */
-export class RadarStore {
+export class FollowStore {
     dir;
     file;
     state = emptyState();

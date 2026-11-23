@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "dsh-douyin-radar",
+  id: "douyinfollow",
   factory(require) {
     try {
     const module = { exports: {} };
@@ -57,9 +57,9 @@ var FACT_LABEL = {
 
 // src/client/index.ts
 var h = React.createElement;
-var PKG = "dsh-douyin-radar";
-var STATE = "/plugin-data/dsh-douyin-radar/state";
-var ACTION = "/plugin-data/dsh-douyin-radar/action";
+var PKG = "douyinfollow";
+var STATE = "/plugin-data/douyinfollow/state";
+var ACTION = "/plugin-data/douyinfollow/action";
 var BADGE_COLOR = {
   verified: "#2ea043",
   mixed: "#d29922",
@@ -199,7 +199,7 @@ function CardView({ card, open, onToggle, onAct }) {
     )
   );
 }
-function RadarPanel() {
+function FollowPanel() {
   const [snap, setSnap] = React.useState(null);
   const [err, setErr] = React.useState(null);
   const [open, setOpen] = React.useState({});
@@ -257,16 +257,17 @@ function RadarPanel() {
     h(
       "div",
       { style: { display: "flex", alignItems: "center", gap: 8 } },
-      h("strong", { style: { fontSize: 14 } }, "\u6296\u97F3\u8FDB\u5C55\u96F7\u8FBE"),
+      h("strong", { style: { fontSize: 14 } }, "\u6296\u97F3\u8DDF\u8FDB"),
       unread > 0 && h("span", { style: { ...chip, background: "#58a6ff22", color: "#58a6ff" } }, `${unread} \u672A\u8BFB`),
       h("span", { style: { marginLeft: "auto", opacity: 0.6, fontSize: 11 } }, snap.patrol.running ? "\u5DE1\u67E5\u4E2D\u2026" : snap.idle.idle ? "\u7A7A\u95F2" : "\u5FD9")
     ),
     h(
       "div",
       { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-      h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("patrol") }, "\u7ACB\u5373\u5DE1\u67E5"),
+      h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("patrol") }, "\u7ACB\u5373\u8DDF\u8FDB"),
       !snap.login.loggedIn && h("button", { type: "button", style: btn, disabled: busy || snap.login.loggingIn, onClick: () => void act("login") }, snap.login.loggingIn ? "\u7B49\u5F85\u626B\u7801\u2026" : "\u626B\u7801\u767B\u5F55"),
       h("button", { type: "button", style: btn, disabled: busy || snap.human.checking, onClick: () => void act("human") }, snap.human.checking ? "\u9A8C\u8BC1\u4E2D\u2026" : "\u8FC7\u9A8C\u8BC1"),
+      snap.human.checking && h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("humanDone") }, "\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1"),
       h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("readAll") }, "\u5168\u90E8\u5DF2\u8BFB"),
       h("button", { type: "button", style: btn, onClick: () => setShowArchived((v) => !v) }, showArchived ? "\u9690\u85CF\u5F52\u6863" : "\u663E\u793A\u5F52\u6863"),
       h("button", { type: "button", style: btn, onClick: () => setShowCfg((v) => !v) }, showCfg ? "\u6536\u8D77\u8BBE\u7F6E" : "\u5173\u952E\u8BCD\u8BBE\u7F6E")
@@ -304,7 +305,7 @@ function RadarPanel() {
     ),
     snap.login.error && h("div", { style: { color: "#f85149", fontSize: 12 } }, snap.login.error),
     snap.human.error && h("div", { style: { color: "#f85149", fontSize: 12 } }, snap.human.error),
-    snap.human.checking && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u5DF2\u6253\u5F00\u9A8C\u8BC1\u7A97\u53E3\uFF1A\u5982\u51FA\u73B0\u6ED1\u5757/\u70B9\u9009\u8BF7\u5B8C\u6210\u4E00\u6B21\uFF1B\u82E5\u9875\u9762\u5DF2\u80FD\u6B63\u5E38\u6D4F\u89C8\u5219\u65E0\u9700\u64CD\u4F5C\u3002\u5224\u5B9A\u901A\u8FC7\u540E\u7A97\u53E3\u81EA\u52A8\u7F29\u5230\u53F3\u4E0B\u89D2\u5E76\u4FDD\u7559\u4F1A\u8BDD\u4F9B\u5DE1\u67E5\u590D\u7528\u3002"),
+    snap.human.checking && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u5DF2\u6253\u5F00\u9A8C\u8BC1\u7A97\u53E3\uFF1A\u5982\u51FA\u73B0\u6ED1\u5757/\u70B9\u9009\u8BF7\u5B8C\u6210\u4E00\u6B21\uFF1B\u5B8C\u6210\u540E\u81EA\u52A8\u5224\u5B9A\uFF0C\u4E5F\u53EF\u70B9\u300C\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1\u300D\u7ACB\u5373\u590D\u6838\u3002\u5224\u5B9A\u901A\u8FC7\u540E\u7A97\u53E3\u81EA\u52A8\u7F29\u5230\u53F3\u4E0B\u89D2\u5E76\u4FDD\u7559\u4F1A\u8BDD\u4F9B\u5DE1\u67E5\u590D\u7528\u3002"),
     !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? "") && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u4E0A\u6B21\u5DE1\u67E5\u88AB\u6296\u97F3\u98CE\u63A7\u62E6\u622A\uFF1A\u70B9\u300C\u8FC7\u9A8C\u8BC1\u300D\u4EBA\u5DE5\u5B8C\u6210\u4E00\u6B21\uFF0C\u4E4B\u540E\u81EA\u52A8\u5DE1\u67E5\u901A\u5E38\u5373\u53EF\u6062\u590D\u3002"),
     err && h("div", { style: { color: "#f85149", fontSize: 12 } }, `\u8FDE\u63A5\u5F02\u5E38\uFF1A${err}`),
     snap.leadsPending > 0 && h("div", { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} \u6761\u7EBF\u7D22\u6B63\u5728\u6838\u5B9E\u7F16\u6392\u4E2D\u2026`),
@@ -331,24 +332,24 @@ var inject = ["slots", "sidebarRightTabs"];
 function apply(ctx) {
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: PKG,
-    kind: "douyin-radar",
-    title: () => "\u6296\u97F3\u8FDB\u5C55\u96F7\u8FBE",
+    kind: "douyin-follow",
+    title: () => "\u6296\u97F3\u8DDF\u8FDB",
     guide: [{
       id: PKG,
-      kind: "douyin-radar",
-      title: () => "\u6296\u97F3\u8FDB\u5C55\u96F7\u8FBE",
-      description: () => "\u7A7A\u95F2\u5DE1\u67E5\u6296\u97F3\u8BDD\u9898\u89C6\u9891\uFF0C\u6743\u5A01\u6765\u6E90\u6838\u5B9E\u540E\u63A8\u9001\u8FDB\u5C55\u5361\u7247"
+      kind: "douyin-follow",
+      title: () => "\u6296\u97F3\u8DDF\u8FDB",
+      description: () => "\u8DDF\u8FDB\u9009\u5B9A\u5185\u5BB9\u7684\u5B9E\u65F6\u8FDB\u5C55"
     }]
-  }), "radar tab type");
+  }), "follow tab type");
   ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register(
     { name: "sidebar.right.pane.tab", key: PKG },
-    RadarPanel
-  )), "radar panel body");
+    FollowPanel
+  )), "follow panel body");
 }
 
-    const plug = { inject: module.exports.inject, apply(ctx) { try { return module.exports.apply(ctx); } catch (e) { window.__RADAR_APPLY_ERR__ = String(e && e.stack || e); console.error("[radar-apply]", e && e.stack || e); throw e; } } };
-    window.__RADAR_PLUGIN__ = plug;
+    const plug = { inject: module.exports.inject, apply(ctx) { try { return module.exports.apply(ctx); } catch (e) { window.__FOLLOW_APPLY_ERR__ = String(e && e.stack || e); console.error("[follow-apply]", e && e.stack || e); throw e; } } };
+    window.__FOLLOW_PLUGIN__ = plug;
     return plug;
-    } catch (e) { window.__RADAR_FACTORY_ERR__ = String(e && e.stack || e); console.error("[radar-factory]", e && e.stack || e); throw e; }
+    } catch (e) { window.__FOLLOW_FACTORY_ERR__ = String(e && e.stack || e); console.error("[follow-factory]", e && e.stack || e); throw e; }
   },
 });

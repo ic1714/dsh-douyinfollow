@@ -1,5 +1,5 @@
 /**
- * dsh-douyin-radar 共享类型：宿主与客户端面板共用的数据形状。
+ * douyinfollow 共享类型：宿主与客户端面板共用的数据形状。
  * 视频只是线索来源；卡片上的事实点必须带权威来源核实状态。
  */
 
@@ -77,24 +77,24 @@ export interface PatrolRecord {
 }
 
 /** 本地持久化状态（state.json）。 */
-export interface RadarState {
+export interface FollowState {
   seen: string[]
   leads: Lead[]
   cards: Card[]
   patrols: PatrolRecord[]
   lastPatrolAt?: number
-  prefs?: RadarPrefs
+  prefs?: FollowPrefs
 }
 
 /** 面板内可改的运行偏好（覆盖宿主配置默认值，存于 state.json）。 */
-export interface RadarPrefs {
+export interface FollowPrefs {
   enabled?: boolean
   keywords?: string[]
   intervalMinutes?: number
 }
 
 /** 面板 / 路由 / 工具共用的运行时快照。 */
-export interface RadarSnapshot {
+export interface FollowSnapshot {
   now: number
   enabled: boolean
   keywords: string[]
@@ -110,7 +110,7 @@ export interface RadarSnapshot {
   ocrReady: boolean
 }
 
-export function emptyState(): RadarState {
+export function emptyState(): FollowState {
   return { seen: [], leads: [], cards: [], patrols: [], prefs: {} }
 }
 

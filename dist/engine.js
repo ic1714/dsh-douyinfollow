@@ -5,19 +5,19 @@ import { DouyinBrowser } from './browser.js';
 import { readConfig } from './config.js';
 import { ActivityTracker } from './idle.js';
 import { FrameOcr } from './ocr.js';
-import { RadarStore } from './store.js';
+import { FollowStore } from './store.js';
 import { overallOf } from './types.js';
 export function resolveDataDir(cfg) {
     if (cfg.dataDir.trim())
         return cfg.dataDir.trim();
     const home = process.env.DSH_HOME || join(homedir(), '.dsh');
-    return join(home, 'plugin-data', 'dsh-douyin-radar');
+    return join(home, 'plugin-data', 'douyinfollow');
 }
 /**
  * 核心引擎：空闲巡查 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
  * 浏览器与核实会话都在后台运行，不打断前台对话。
  */
-export class RadarEngine {
+export class FollowEngine {
     ctx;
     config;
     store;
@@ -34,7 +34,7 @@ export class RadarEngine {
         this.config = config;
         const cfg = readConfig(config);
         const dir = resolveDataDir(cfg);
-        this.store = new RadarStore(dir);
+        this.store = new FollowStore(dir);
         this.browser = new DouyinBrowser({
             userDataDir: join(dir, 'browser-profile'),
             channel: cfg.browserChannel,
@@ -88,6 +88,11 @@ export class RadarEngine {
             void this.browser.humanCheck(url);
         }
         return { started: true };
+    }
+    /** 面板「我已完成验证」：用户网页端过完验证后手动触发立即复核，兜底自动检测漏判。 */
+    confirmHumanCheck() {
+        this.browser.confirmHuman();
+        return { confirmed: this.browser.checkingHuman };
     }
     async tick() {
         if (this.disposed || this.running)
@@ -348,13 +353,13 @@ export class RadarEngine {
 }
 function buildVerifyPrompt(batchId, count) {
     return [
-        `你是「抖音进展雷达」的核实编排员。本次批次 batchId=${batchId}，共 ${count} 条线索。`,
+        `你是「抖音跟进」的核实编排员。本次批次 batchId=${batchId}，共 ${count} 条线索。`,
         '背景：抖音视频只是线索来源，博主普遍过度营销，其说法一律视为待证线索，不可直接当事实。',
         '步骤：',
-        `1. 调用 douyin_radar_leads，参数 {"batchId":"${batchId}"}，获取线索（视频标题/文案/AI 讲解/画面文字）。`,
-        '2. 逐条判断与关键词的相关性；明显无关的用 douyin_radar_skip 跳过并给理由。',
+        `1. 调用 douyin_follow_leads，参数 {"batchId":"${batchId}"}，获取线索（视频标题/文案/AI 讲解/画面文字）。`,
+        '2. 逐条判断与关键词的相关性；明显无关的用 douyin_follow_skip 跳过并给理由。',
         '3. 相关线索提取可核实事实点（项目/产品名、版本号、功能、发布日期、数据等），用 web_search / web_fetch 到权威来源交叉核实：优先 GitHub 仓库/Release/Commit、官网、官方文档，其次权威媒体。',
-        '4. 调用 douyin_radar_publish 发布卡片：headline 为一句话进展；facts 每条带 status（verified/contradicted/unverified）与 sources（权威来源 URL）；博主营销夸大归入 marketing；summary 概述视频在说什么。',
+        '4. 调用 douyin_follow_publish 发布卡片：headline 为一句话进展；facts 每条带 status（verified/contradicted/unverified）与 sources（权威来源 URL）；博主营销夸大归入 marketing；summary 概述视频在说什么。',
         '5. 全部处理完后输出一行统计（发布/跳过/无法核实数量）。',
         '约束：全程只读；不得在抖音执行点赞/评论/关注/发布等任何交互；不得编造来源 URL；证据不足标 unverified 并在 note 说明缺什么证据；与权威来源冲突标 contradicted。',
     ].join('\n');

@@ -4,15 +4,15 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readConfig } from '../dist/config.js'
-import { RadarEngine } from '../dist/engine.js'
-import { RadarStore } from '../dist/store.js'
+import { FollowEngine } from '../dist/engine.js'
+import { FollowStore } from '../dist/store.js'
 import { overallOf } from '../dist/types.js'
 
-const dir = await mkdtemp(join(tmpdir(), 'radar-smoke-'))
-const dir2 = await mkdtemp(join(tmpdir(), 'radar-smoke2-'))
+const dir = await mkdtemp(join(tmpdir(), 'follow-smoke-'))
+const dir2 = await mkdtemp(join(tmpdir(), 'follow-smoke2-'))
 
 // 1. 存储往返与去重
-const store = new RadarStore(dir)
+const store = new FollowStore(dir)
 await store.load()
 store.markSeen(['v1', 'v2'])
 assert.equal(store.hasSeen('v1'), true)
@@ -24,7 +24,7 @@ const lead = {
 }
 store.addLeads([lead])
 await store.save()
-const store2 = new RadarStore(dir)
+const store2 = new FollowStore(dir)
 await store2.load()
 assert.equal(store2.hasSeen('v1'), true)
 assert.equal(store2.state.leads.length, 1)
@@ -55,7 +55,7 @@ const fakeCtx = {
     deleteInactive: async () => ({ deleted: 0 }),
   },
 }
-const engine = new RadarEngine(fakeCtx, {
+const engine = new FollowEngine(fakeCtx, {
   enabled: v(true), keywords: v(['DeepSeek']), intervalMinutes: v(30), idleQuietSeconds: v(60),
   maxVideosPerPatrol: v(4), ocrEnabled: v(false), aiSummaryEnabled: v(true), frameCount: v(2),
   headlessPatrol: v(true), browserChannel: v('msedge'), dataDir: v(dir2), loginTimeoutSeconds: v(120), retentionCards: v(50),

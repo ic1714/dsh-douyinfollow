@@ -1,5 +1,5 @@
 /**
- * dsh-douyin-radar 共享类型：宿主与客户端面板共用的数据形状。
+ * douyinfollow 共享类型：宿主与客户端面板共用的数据形状。
  * 视频只是线索来源；卡片上的事实点必须带权威来源核实状态。
  */
 export function emptyState() {

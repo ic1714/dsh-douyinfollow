@@ -1,7 +1,7 @@
 {
-  "name": "dsh-douyin-radar",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness 插件：空闲时巡查抖音话题视频，提取事实点并到权威来源核实，侧栏卡片面板随时推送进展。",
+  "name": "douyinfollow",
+  "version": "0.2.1",
+  "description": "跟进选定内容的实时进展。",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

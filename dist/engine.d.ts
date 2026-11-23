@@ -1,10 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { DouyinBrowser } from './browser.js';
-import { type Config, type RadarConfig } from './config.js';
+import { type Config, type FollowConfig } from './config.js';
 import { ActivityTracker } from './idle.js';
 import { FrameOcr } from './ocr.js';
-import { RadarStore } from './store.js';
-import { type Fact, type PatrolRecord, type RadarSnapshot } from './types.js';
+import { FollowStore } from './store.js';
+import { type Fact, type PatrolRecord, type FollowSnapshot } from './types.js';
 export interface PublishInput {
     leadId: string;
     headline: string;
@@ -13,15 +13,15 @@ export interface PublishInput {
     marketing?: string;
     summary?: string;
 }
-export declare function resolveDataDir(cfg: RadarConfig): string;
+export declare function resolveDataDir(cfg: FollowConfig): string;
 /**
  * 核心引擎：空闲巡查 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
  * 浏览器与核实会话都在后台运行，不打断前台对话。
  */
-export declare class RadarEngine {
+export declare class FollowEngine {
     private ctx;
     private config;
-    readonly store: RadarStore;
+    readonly store: FollowStore;
     readonly browser: DouyinBrowser;
     readonly ocr: FrameOcr;
     readonly tracker: ActivityTracker;
@@ -31,7 +31,7 @@ export declare class RadarEngine {
     private loggedIn;
     private disposed;
     constructor(ctx: Context, config: Config);
-    cfg(): RadarConfig;
+    cfg(): FollowConfig;
     start(): Promise<void>;
     /** 插件卸载时由入口的 ctx.effect 调用。 */
     dispose(): Promise<void>;
@@ -43,6 +43,10 @@ export declare class RadarEngine {
     /** 风控拦截时开有头窗口请用户人工过验证；成功后信任态留在 profile。 */
     startHumanCheck(): {
         started: boolean;
+    };
+    /** 面板「我已完成验证」：用户网页端过完验证后手动触发立即复核，兜底自动检测漏判。 */
+    confirmHumanCheck(): {
+        confirmed: boolean;
     };
     private tick;
     /** 前台窗口是否全屏（60 秒缓存，避免每 tick 起进程）；顺带记录前台 hwnd 供归还焦点。 */
@@ -67,5 +71,5 @@ export declare class RadarEngine {
         reason?: string;
     };
     skipLead(leadId: string, reason?: string): boolean;
-    snapshot(): RadarSnapshot;
+    snapshot(): FollowSnapshot;
 }

@@ -1,6 +1,6 @@
 import { sanitizePrefs } from './store.js';
-export const STATE_PATH = '/plugin-data/dsh-douyin-radar/state';
-export const ACTION_PATH = '/plugin-data/dsh-douyin-radar/action';
+export const STATE_PATH = '/plugin-data/douyinfollow/state';
+export const ACTION_PATH = '/plugin-data/douyinfollow/action';
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 function sendJson(res, status, payload) {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -74,6 +74,9 @@ export function registerRoutes(ctx, engine) {
                         return;
                     case 'human':
                         sendJson(res, 200, engine.startHumanCheck());
+                        return;
+                    case 'humanDone':
+                        sendJson(res, 200, engine.confirmHumanCheck());
                         return;
                     case 'refreshLogin':
                         sendJson(res, 200, { loggedIn: await engine.refreshLogin() });

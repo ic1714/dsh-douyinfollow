@@ -1,14 +1,14 @@
-import { type Card, type Lead, type PatrolRecord, type RadarPrefs, type RadarState } from './types.js';
+import { type Card, type Lead, type PatrolRecord, type FollowPrefs, type FollowState } from './types.js';
 /** 偏好清洗：关键词去空去重限长，间隔夹到合法区间。 */
-export declare function sanitizePrefs(raw: unknown): RadarPrefs;
+export declare function sanitizePrefs(raw: unknown): FollowPrefs;
 /**
  * 本地 JSON 存储：已看视频去重、线索、卡片、巡查记录。
  * 写入走 tmp + rename 原子替换，避免崩溃留下半截文件。
  */
-export declare class RadarStore {
+export declare class FollowStore {
     readonly dir: string;
     readonly file: string;
-    state: RadarState;
+    state: FollowState;
     private seenSet;
     private saving;
     constructor(dir: string);
