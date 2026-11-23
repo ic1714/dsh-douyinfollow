@@ -1,0 +1,11 @@
+# pnpm 11+ 构建脚本审批：true 放行，false 明确禁止（未列出的会硬失败）
+allowBuilds:
+  esbuild: true
+  '@deepseek-ai/dsh-subprocess-local': false
+  '@google/genai': false
+  koffi: false
+  node-pty: false
+  protobufjs: false
+  tesseract.js: false
+
+autoInstallPeers: true

@@ -1,0 +1,76 @@
+{
+  "name": "dsh-douyin-radar",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 插件：空闲时巡查抖音话题视频，提取事实点并到权威来源核实，侧栏卡片面板随时推送进展。",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "douyin",
+    "fact-check"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.0-0 <0.3.0-0",
+    "node": ">=22"
+  },
+  "dependencies": {
+    "playwright-core": "^1.55.0",
+    "tesseract.js": "^5.1.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.0-0",
+    "@deepseek-ai/dsh-schedule": ">=0.2.0-0",
+    "@deepseek-ai/dsh-session": ">=0.2.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-0",
+    "@deepseek-ai/schemastery": ">=3.0.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-host-webserver": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-schedule": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

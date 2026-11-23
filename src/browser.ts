@@ -1,0 +1,533 @@
+import { mkdir } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { join } from 'node:path'
+import { chromium, type BrowserContext, type Page } from 'playwright-core'
+import type { VideoRef } from './types.js'
+
+export interface BrowserOptions {
+  userDataDir: string
+  /** 系统浏览器通道：msedge / chrome / chromium。复用系统内核，免下载浏览器。 */
+  channel: string
+  headlessPatrol: boolean
+  loginTimeoutSeconds: number
+}
+
+export interface SearchResultItem {
+  videoId: string
+  url: string
+  title: string
+  author: string
+  publishText?: string
+}
+
+export interface CollectedVideo {
+  title: string
+  author: string
+  desc: string
+  aiSummary?: string
+  /** 关键帧截图（PNG buffer），交给 OCR 提取画面文字。 */
+  frames: Buffer[]
+}
+
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+const rand = (min: number, max: number) => min + Math.random() * (max - min)
+
+const LOGIN_COOKIES = ['sessionid_ss', 'sessionid', 'passport_auth_status']
+
+/** Chrome cookie 过期时间戳（1601 纪元微秒）→ unix 秒；0 表示会话 cookie。 */
+function chromeExpiresToUnix(v: number | bigint): number {
+  const n = Number(v)
+  if (!n) return Number.MAX_SAFE_INTEGER
+  return n / 1e6 - 11644473600
+}
+
+function ps(script: string, timeoutMs = 12000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout)
+    })
+  })
+}
+
+/**
+ * 插件自管的持久化浏览器：登录态保存在独立 profile，巡查后台运行、不抢焦点。
+ * 全程只读：不点赞、不评论、不关注、不发布。
+ */
+export class DouyinBrowser {
+  private ctx?: BrowserContext
+  private ctxHeadless?: boolean
+  private loginWaiter?: Promise<boolean>
+  private humanWaiter?: Promise<boolean>
+  loggingIn = false
+  loginError?: string
+  checkingHuman = false
+  humanError?: string
+  private foregroundHwnd = 0
+
+  constructor(private opts: BrowserOptions) {}
+
+  private async ensure(headless: boolean, minimize = false): Promise<BrowserContext> {
+    // 登录/人工验证等待期间不得把有头窗口换成无头：先等流程结束，避免扫到一半被关窗。
+    if ((this.loggingIn || this.checkingHuman) && this.ctx && this.ctxHeadless !== headless) {
+      await (this.loginWaiter ?? this.humanWaiter)?.catch(() => undefined)
+    }
+    if (this.ctx && this.ctxHeadless === headless) return this.ctx
+    await this.close()
+    await this.killOrphanEdge()
+    await this.markCleanExit()
+    await mkdir(this.opts.userDataDir, { recursive: true })
+    this.ctx = await chromium.launchPersistentContext(this.opts.userDataDir, {
+      channel: this.opts.channel,
+      headless,
+      viewport: { width: 1440, height: 900 },
+      locale: 'zh-CN',
+      timezoneId: 'Asia/Shanghai',
+      // 去掉「正受到自动测试软件的控制」提示条；被前台窗口遮挡时仍正常渲染/跑定时器，
+      // 保证游戏/视频全屏期间后台巡查不被懒渲染或节流停摆。
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--mute-audio',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-timer-throttling',
+        // 强杀残留进程会被 Edge 记为「意外关闭」，下次启动弹还原对话框盖住页面：禁掉。
+        '--disable-session-crashed-bubble',
+        '--hide-crash-restore-bubble',
+        '--noerrdialogs',
+      ],
+    })
+    this.ctxHeadless = headless
+    // 浏览器崩溃/被用户关窗后清掉引用：下次 ensure 干净重建，而不是抱着死上下文一直报错。
+    const owned = this.ctx
+    owned.once('close', () => {
+      if (this.ctx === owned) {
+        this.ctx = undefined
+        this.ctxHeadless = undefined
+      }
+    })
+    await this.ctx.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+    })
+    if (minimize && !headless) {
+      // Edge 后台模式可能不自动显窗：先强制显窗（保证风控看到真实可见页面），随即缩角+置底+归还焦点。
+      const p = this.ctx.pages()[0] ?? await this.ctx.newPage()
+      await p.bringToFront().catch(() => undefined)
+      await this.quietBounds()
+      await this.restoreFocus()
+    }
+    return this.ctx
+  }
+
+  /** 启动前清理上次崩溃/强杀残留的本 profile Edge 进程，避免进程堆积与 profile 锁冲突。 */
+  private async killOrphanEdge(): Promise<void> {
+    if (process.platform !== 'win32') return
+    try {
+      await ps(`Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`)
+    } catch { /* 清理失败不阻塞启动 */ }
+  }
+
+  /** 把 profile 标记为「正常退出」，避免 Edge 启动时弹「还原页面/意外关闭」对话框盖住巡查页。 */
+  private async markCleanExit(): Promise<void> {
+    try {
+      const { readFile, writeFile } = await import('node:fs/promises')
+      const file = join(this.opts.userDataDir, 'Default', 'Preferences')
+      const raw = await readFile(file, 'utf8')
+      const j = JSON.parse(raw) as { profile?: Record<string, unknown> }
+      j.profile = { ...(j.profile ?? {}), exit_type: 'Normal', exited_cleanly: true }
+      await writeFile(file, JSON.stringify(j), 'utf8')
+    } catch { /* 无 Preferences 或解析失败忽略 */ }
+  }
+
+  /** 记住巡查前的前台窗口， launches 后归还焦点，避免打断游戏/全屏应用。 */
+  noteForeground(hwnd: number): void {
+    if (hwnd > 0) this.foregroundHwnd = hwnd
+  }
+
+  /** 窗口缩到右下角 + 置底 + 不激活 + 焦点归还前台：巡查在后台跑，不置顶弹窗打断游戏/视频/工作。 */
+  async quiet(): Promise<void> {
+    const hwnd = this.foregroundHwnd
+    if (process.platform !== 'win32') return
+    try {
+      const script = [
+        `Add-Type -Name W -Namespace N -MemberDefinition 'public delegate bool EnumWindowsProc(System.IntPtr h, System.IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, System.IntPtr l); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint p); [DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out R r); public struct R { public int L; public int T; public int R2; public int B; } [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int cmd);'`,
+        `Add-Type -AssemblyName System.Windows.Forms`,
+        `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' }).ProcessId )`,
+        `$global:hw = [System.IntPtr]::Zero`,
+        `$cb = [N.W+EnumWindowsProc]{ param($h,$l) $p = 0; [N.W]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null; if ($global:rp -contains $p -and $global:hw -eq [System.IntPtr]::Zero -and [N.W]::IsWindowVisible($h)) { $r = New-Object N.W+R; [N.W]::GetWindowRect($h, [ref]$r) | Out-Null; if (($r.R2 - $r.L) -ge 200 -or ($r.L -lt -1000)) { $global:hw = $h } }; return $true }`,
+        `[N.W]::EnumWindows($cb, [System.IntPtr]::Zero) | Out-Null`,
+        `$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds`,
+        `if ($global:hw -ne [System.IntPtr]::Zero) { [N.W]::ShowWindow($global:hw, 9) | Out-Null; [N.W]::SetWindowPos($global:hw, [System.IntPtr]1, ($b.Right - 460), ($b.Bottom - 360), 460, 360, 0x0010) | Out-Null }`,
+        `if (${hwnd} -gt 0) { [N.W]::SetForegroundWindow([System.IntPtr]${hwnd}) | Out-Null }`,
+      ].join('; ')
+      await ps(script)
+    } catch { /* 置底/归还焦点失败不影响功能 */ }
+  }
+
+  /** 用户主动扫码/过验证：恢复最小化窗口并置前台居中，保证用户看得见、能操作。 */
+  async show(): Promise<void> {
+    if (process.platform !== 'win32') return
+    try {
+      const script = [
+        `Add-Type -Name W -Namespace N -MemberDefinition 'public delegate bool EnumWindowsProc(System.IntPtr h, System.IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, System.IntPtr l); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint p); [DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out R r); public struct R { public int L; public int T; public int R2; public int B; } [DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int cmd);'`,
+        `Add-Type -AssemblyName System.Windows.Forms`,
+        `$global:rp = @( (Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*dsh-douyin-radar*' }).ProcessId )`,
+        `$global:hw = [System.IntPtr]::Zero`,
+        `$cb = [N.W+EnumWindowsProc]{ param($h,$l) $p = 0; [N.W]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null; if ($global:rp -contains $p -and $global:hw -eq [System.IntPtr]::Zero -and [N.W]::IsWindowVisible($h)) { $r = New-Object N.W+R; [N.W]::GetWindowRect($h, [ref]$r) | Out-Null; if (($r.R2 - $r.L) -ge 200 -or ($r.L -lt -1000)) { $global:hw = $h } }; return $true }`,
+        `[N.W]::EnumWindows($cb, [System.IntPtr]::Zero) | Out-Null`,
+        `$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds`,
+        `if ($global:hw -ne [System.IntPtr]::Zero) { [N.W]::ShowWindow($global:hw, 9) | Out-Null; [N.W]::SetWindowPos($global:hw, [System.IntPtr]0, ($b.Width - 1200) / 2, ($b.Height - 800) / 2, 1200, 800, 0x0040) | Out-Null; [N.W]::SetForegroundWindow($global:hw) | Out-Null }`,
+      ].join('; ')
+      await ps(script)
+    } catch { /* 显窗失败不影响功能 */ }
+  }
+
+  private async restoreFocus(): Promise<void> {
+    await this.quiet()
+  }
+
+  /** 把有头窗口缩到屏幕右下角：可见但不挡主窗口（最小化会触发风控/懒渲染停摆）。 */
+  private async quietBounds(): Promise<void> {
+    if (!this.ctx || this.ctxHeadless) return
+    try {
+      const page = this.ctx.pages()[0] ?? await this.ctx.newPage()
+      const scr = await page.evaluate(() => ({ w: window.screen.availWidth, h: window.screen.availHeight }))
+      const session = await this.ctx.newCDPSession(page)
+      const { windowId } = await session.send('Browser.getWindowForTarget')
+      await session.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { windowState: 'normal', left: Math.max(0, scr.w - 460), top: Math.max(0, scr.h - 360), width: 460, height: 360 },
+      })
+    } catch { /* 摆位失败不影响功能 */ }
+  }
+
+  /** 风控识别：标题 + 页面文字 + captcha iframe，覆盖中间页与内嵌滑块两种变体。 */
+  private async captchaHit(page: Page): Promise<boolean> {
+    const t = await page.title().catch(() => '')
+    if (/验证码|captcha|verify/i.test(t)) return true
+    return await page.evaluate(() => {
+      const txt = (document.body?.innerText || '').slice(0, 3000)
+      if (/验证码|形状相同|滑块|拖动|captcha/i.test(txt)) return true
+      return Array.from(document.querySelectorAll('iframe')).some(f => /captcha|verify/i.test(f.src || ''))
+    }).catch(() => false)
+  }
+
+  private async pace(): Promise<void> {
+    await sleep(rand(1200, 3200))
+  }
+
+  private async loggedInCookies(ctx: BrowserContext): Promise<boolean> {
+    const cookies = await ctx.cookies('https://www.douyin.com')
+    return cookies.some(c => LOGIN_COOKIES.includes(c.name) && c.value.length > 0)
+  }
+
+  /** 是否已登录：活上下文直接读；否则读磁盘 cookie 表（不启浏览器、启动不弹窗）；读盘失败再无头复核（不可见）。 */
+  async isLoggedIn(): Promise<boolean> {
+    try {
+      if (this.ctx) return await this.loggedInCookies(this.ctx)
+      const disk = await this.loginCookiesOnDisk()
+      if (disk !== undefined) return disk
+      const ctx = await this.ensure(true)
+      const ok = await this.loggedInCookies(ctx)
+      // 无头复核只为读 cookie：读完即释放，避免后台进程常驻占内存。
+      if (!this.opts.headlessPatrol) await this.close().catch(() => undefined)
+      return ok
+    } catch {
+      return false
+    }
+  }
+
+  /** 只读打开 profile 的 Cookies 表，按 cookie 名+有效期判定登录态，零浏览器启动。 */
+  private async loginCookiesOnDisk(): Promise<boolean | undefined> {
+    const file = join(this.opts.userDataDir, 'Default', 'Network', 'Cookies')
+    const read = async (path: string): Promise<boolean> => {
+      const spec = 'node:sqlite'
+      const mod = (await import(spec)) as { DatabaseSync: new (p: string, o?: { readOnly?: boolean }) => { prepare: (s: string) => { all: (...a: unknown[]) => unknown[] }; close: () => void } }
+      const db = new mod.DatabaseSync(path, { readOnly: true })
+      try {
+        const rows = db.prepare(`SELECT name, expires_utc FROM cookies WHERE host_key LIKE '%douyin.com' AND name IN (${LOGIN_COOKIES.map(() => '?').join(',')})`).all(...LOGIN_COOKIES) as { name: string; expires_utc: number | bigint }[]
+        const now = Date.now() / 1000
+        return rows.some(r => chromeExpiresToUnix(r.expires_utc) > now)
+      } finally {
+        db.close()
+      }
+    }
+    try {
+      return await read(file)
+    } catch {
+      // WAL 库在只读模式可能打不开（需 shm 写权限）：复制一份再读，仍不启浏览器。
+      try {
+        const { mkdtemp, copyFile } = await import('node:fs/promises')
+        const { tmpdir } = await import('node:os')
+        const dir = await mkdtemp(join(tmpdir(), 'radar-cookies-'))
+        for (const suffix of ['', '-wal', '-shm']) {
+          await copyFile(file + suffix, join(dir, 'Cookies' + suffix)).catch(() => undefined)
+        }
+        return await read(join(dir, 'Cookies'))
+      } catch {
+        // 宿主 node 可能不带 node:sqlite：退化为扫描 cookie 名字符串（存在性判定，零进程）。
+        try {
+          const { readFile } = await import('node:fs/promises')
+          const txt = (await readFile(file)).toString('latin1')
+          return LOGIN_COOKIES.some(n => txt.includes(n))
+        } catch {
+          return undefined
+        }
+      }
+    }
+  }
+
+  /** 打开有头浏览器供用户扫码；轮询登录 cookie 直到成功或超时。 */
+  login(): Promise<boolean> {
+    if (this.loginWaiter) return this.loginWaiter
+    this.loggingIn = true
+    this.loginError = undefined
+    this.loginWaiter = (async () => {
+      let closedEarly = false
+      let ok = false
+      try {
+        const ctx = await this.ensure(false)
+        ctx.once('close', () => { closedEarly = true })
+        const page = ctx.pages()[0] ?? await ctx.newPage()
+        await page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 60000 })
+        // 用户主动扫码：恢复最小化并置前台居中，保证看得见、能扫码。
+        await this.show()
+        const deadline = Date.now() + this.opts.loginTimeoutSeconds * 1000
+        while (Date.now() < deadline && !closedEarly) {
+          try {
+            if (await this.loggedInCookies(ctx)) { ok = true; return true }
+          } catch {
+            closedEarly = true
+            break
+          }
+          await sleep(2000)
+        }
+        if (closedEarly) {
+          // 窗口被提前关闭（用户手动关窗等）：登录态可能已落盘，用无头上下文复核一次。
+          await this.close().catch(() => undefined)
+          if (await this.isLoggedIn()) { ok = true; return true }
+          this.loginError = '浏览器窗口被提前关闭且未检测到登录态：请重新点「扫码登录」，扫码后保持窗口打开直到面板显示已登录'
+          return false
+        }
+        this.loginError = '登录超时：未检测到登录 cookie'
+        return false
+      } catch (err) {
+        this.loginError = String((err as Error)?.message ?? err)
+        return false
+      } finally {
+        this.loggingIn = false
+        // 成功则保留会话：风控信任态绑定浏览器会话，关窗即失效；巡查复用同一上下文。
+        if (ok) { await this.quietBounds(); await this.restoreFocus() }
+        else await this.close().catch(() => undefined)
+        this.loginWaiter = undefined
+      }
+    })()
+    return this.loginWaiter
+  }
+
+  /** 风控验证码中间页：开有头窗口请用户人工过一次滑块/点选，信任态落 profile。 */
+  humanCheck(url: string): Promise<boolean> {
+    if (this.humanWaiter) return this.humanWaiter
+    this.checkingHuman = true
+    this.humanError = undefined
+    this.humanWaiter = (async () => {
+      let ok = false
+      try {
+        const ctx = await this.ensure(false)
+        const page = await ctx.newPage()
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+        // 用户主动过验证：恢复最小化并置前台居中，方便完成滑块/点选。
+        await this.show()
+        const deadline = Date.now() + this.opts.loginTimeoutSeconds * 1000
+        let stable = 0
+        while (Date.now() < deadline) {
+          // 信任恢复判定：无验证码 +（有视频链接 或 已登录且页面有实质内容）。
+          // 首页/恢复标签页没有 /video/ 链接，只认搜索结果会空等到超时。
+          if (!(await this.captchaHit(page))) {
+            const n = await page.locator('a[href*="/video/"]').count().catch(() => 0)
+            const bodyLen = await page.evaluate(() => (document.body?.innerText || '').length).catch(() => 0)
+            const logged = await this.loggedInCookies(ctx).catch(() => false)
+            if (n > 0 || (logged && bodyLen > 200)) stable += 1
+            else stable = 0
+            if (stable >= 2) { ok = true; return true }
+          } else {
+            stable = 0
+          }
+          await sleep(2000)
+        }
+        this.humanError = '验证超时：未等到搜索结果页，请重试'
+        return false
+      } catch (err) {
+        this.humanError = String((err as Error)?.message ?? err)
+        return false
+      } finally {
+        this.checkingHuman = false
+        // 成功则保留会话供巡查复用（风控信任态绑定会话）；失败才关窗。
+        if (ok) { await this.quietBounds(); await this.restoreFocus() }
+        else await this.close().catch(() => undefined)
+        this.humanWaiter = undefined
+      }
+    })()
+    return this.humanWaiter
+  }
+
+  /** 搜索话题视频，返回去重前的候选列表。 */
+  async search(keyword: string, limit: number): Promise<SearchResultItem[]> {
+    const ctx = await this.ensure(this.opts.headlessPatrol, !this.opts.headlessPatrol)
+    const page = await ctx.newPage()
+    try {
+      const url = `https://www.douyin.com/search/${encodeURIComponent(keyword)}?type=video`
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+      if (await this.captchaHit(page)) {
+        throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试')
+      }
+      await page.waitForSelector('a[href*="/video/"]', { timeout: 30000 }).catch(() => undefined)
+      await this.pace()
+      await page.mouse.wheel(0, 600).catch(() => undefined)
+      await sleep(rand(800, 1600))
+      const items = await page.evaluate(() => {
+        const out: { videoId: string; url: string; title: string; author: string; publishText?: string }[] = []
+        const seen = new Set<string>()
+        const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'))
+        for (const a of anchors) {
+          const href = (a as HTMLAnchorElement).href || ''
+          const m = href.match(/\/video\/(\d+)/)
+          if (!m || seen.has(m[1])) continue
+          seen.add(m[1])
+          const card = a.closest('li') ?? a.closest('[data-e2e]') ?? a.parentElement?.parentElement ?? a
+          const text = (card.textContent || '').replace(/\s+/g, ' ').trim()
+          const title = (a.getAttribute('aria-label') || a.textContent || '').replace(/\s+/g, ' ').trim()
+          const authorEl = card.querySelector('[data-e2e="search-card-author-name"], [class*="author-name"], [class*="authorName"]')
+          const author = (authorEl?.textContent || '').trim()
+          const pm = text.match(/(\d+分钟前|\d+小时前|\d+天前|\d+周前|\d+个月前|\d+月前|昨天|前天|\d{4}-\d{2}-\d{2})/)
+          out.push({ videoId: m[1], url: `https://www.douyin.com/video/${m[1]}`, title: title || text.slice(0, 80), author, publishText: pm?.[1] })
+        }
+        return out
+      })
+      if (items.length === 0 && await this.captchaHit(page)) {
+        throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试')
+      }
+      if (items.length === 0) {
+        const wall = await page.evaluate(() => /登录|扫码/.test((document.body?.innerText || '').slice(0, 1500))).catch(() => false)
+        if (wall) throw new Error('抖音登录态失效：请点面板「扫码登录」重新登录')
+      }
+      return items.slice(0, limit)
+    } finally {
+      await this.closeTab(page)
+    }
+  }
+
+  /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次巡查再开就是弹窗打扰。 */
+  private async closeTab(page: Page): Promise<void> {
+    try {
+      if (this.ctx && this.ctx.pages().length > 1) await page.close()
+      else await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => undefined)
+    } catch { /* 关标签失败不影响功能 */ }
+  }
+
+  /** 打开视频页采集标题/文案/AI 讲解/关键帧。任何一步失败都降级而非中断。 */
+  async collect(item: SearchResultItem, opts: { aiSummary: boolean; frames: number }): Promise<CollectedVideo> {
+    const ctx = await this.ensure(this.opts.headlessPatrol, !this.opts.headlessPatrol)
+    const page = await ctx.newPage()
+    const result: CollectedVideo = { title: item.title, author: item.author, desc: '', frames: [] }
+    try {
+      await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+      if (await this.captchaHit(page)) {
+        throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试')
+      }
+      await page.waitForSelector('video', { timeout: 30000 }).catch(() => undefined)
+      await this.pace()
+      const meta = await page.evaluate(() => {
+        const pick = (sels: string[]) => {
+          for (const s of sels) {
+            const el = document.querySelector(s)
+            const t = (el?.textContent || '').replace(/\s+/g, ' ').trim()
+            if (t) return t
+          }
+          return ''
+        }
+        return {
+          title: pick(['[data-e2e="video-title"]', 'h1']),
+          // 文案限定在本视频信息区：全局 [class*="desc"] 会误抓下一条推荐视频的简介。
+          desc: pick(['[data-e2e="video-desc"]', '[data-e2e="video-info-detail"]', '[data-e2e="video-info"] [class*="desc"]']),
+          author: pick(['[data-e2e="video-author-name"]', '[class*="authorName"]', '[class*="author-name"]', 'a[href*="/user/"]']),
+        }
+      })
+      if (meta.title) result.title = meta.title
+      if (meta.desc) result.desc = meta.desc
+      if (meta.author) result.author = meta.author
+      if (opts.aiSummary) {
+        result.aiSummary = await this.tryAiSummary(page).catch(() => undefined)
+      }
+      if (opts.frames > 0) {
+        result.frames = await this.captureFrames(page, opts.frames).catch(() => [])
+      }
+      return result
+    } finally {
+      await this.closeTab(page)
+    }
+  }
+
+  /** 尝试打开抖音内置 AI 讲解面板并读取摘要文本（有则取，无则降级）。 */
+  private async tryAiSummary(page: Page): Promise<string | undefined> {
+    const entries = [
+      '[data-e2e="ai-summary-entry"]',
+      '[class*="aiSummary"] [class*="entry"]',
+      'button:has-text("AI 总结")',
+      'button:has-text("AI总结")',
+      '[class*="action"] >> text=/^AI/',
+    ]
+    for (const sel of entries) {
+      const loc = page.locator(sel).first()
+      if (await loc.isVisible().catch(() => false)) {
+        await loc.click({ timeout: 5000 }).catch(() => undefined)
+        await sleep(3000)
+        break
+      }
+    }
+    const text = await page.evaluate(() => {
+      const pick = (sels: string[]) => {
+        for (const s of sels) {
+          const el = document.querySelector(s)
+          const t = (el?.textContent || '').replace(/\s+/g, ' ').trim()
+          if (t && t.length > 40) return t
+        }
+        return ''
+      }
+      return pick([
+        '[data-e2e="ai-summary-content"]',
+        '[class*="ai-summary"]',
+        '[class*="aiSummary"]',
+        '[class*="ai-panel"]',
+      ])
+    })
+    return text ? text.slice(0, 4000) : undefined
+  }
+
+  /** 播放中截取若干关键帧（画面文字交给 OCR）。 */
+  private async captureFrames(page: Page, count: number): Promise<Buffer[]> {
+    await page.evaluate(() => {
+      const v = document.querySelector('video')
+      if (v) {
+        v.muted = true
+        void v.play().catch(() => undefined)
+      }
+    }).catch(() => undefined)
+    const frames: Buffer[] = []
+    const video = page.locator('video').first()
+    for (let i = 0; i < count; i++) {
+      await sleep(i === 0 ? 2500 : 3000)
+      const buf = await video.screenshot({ timeout: 8000, type: 'jpeg', quality: 60 }).catch(() => undefined)
+      if (buf) frames.push(buf)
+    }
+    return frames
+  }
+
+  async close(): Promise<void> {
+    const ctx = this.ctx
+    this.ctx = undefined
+    this.ctxHeadless = undefined
+    if (ctx) await ctx.close().catch(() => undefined)
+  }
+}
