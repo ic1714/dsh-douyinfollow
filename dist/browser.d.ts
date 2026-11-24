@@ -12,6 +12,8 @@ export interface SearchResultItem {
     author: string;
     publishText?: string;
 }
+/** 从搜索结果里按顺序挑前 want 条「没看过」的；看过的判定由调用方注入（持久化 seen 账本）。 */
+export declare function pickUnseen(items: SearchResultItem[], isSeen: (videoId: string) => boolean, want: number): SearchResultItem[];
 export interface CollectedVideo {
     title: string;
     author: string;
@@ -70,7 +72,10 @@ export declare class DouyinBrowser {
     /** 面板「取消验证」：立即结束本次验证并关窗，按钮恢复可重试，不等超时。 */
     cancelHuman(): void;
     /** 搜索话题视频，返回去重前的候选列表。 */
-    search(keyword: string, limit: number): Promise<SearchResultItem[]>;
+    search(keyword: string, limit: number, isSeen?: (videoId: string) => boolean): Promise<{
+        items: SearchResultItem[];
+        scanned: number;
+    }>;
     /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次跟进再开就是弹窗打扰。 */
     private closeTab;
     /** 打开视频页采集标题/文案/AI 讲解/关键帧。任何一步失败都降级而非中断。 */

@@ -207,17 +207,18 @@ export class FollowEngine {
                     break;
                 let items;
                 try {
-                    items = await this.browser.search(keyword, cap);
+                    // 传入 seen 判定：搜索内部往下翻找，只回「没看过」的前 N 条，避免前排旧结果永远挡路。
+                    items = await this.browser.search(keyword, cap - leads.length, id => this.store.hasSeen(id));
                 }
                 catch (err) {
                     record.error = `搜索「${keyword}」失败：${err.message}`;
                     continue;
                 }
-                record.found += items.length;
+                record.found += items.scanned;
                 // 搜索已通：清掉面板上残留的「过验证超时」提示，避免误导。
                 this.browser.humanError = undefined;
-                const fresh = items.filter(i => !this.store.hasSeen(i.videoId));
-                this.store.markSeen(items.map(i => i.videoId));
+                const fresh = items.items.filter(i => !this.store.hasSeen(i.videoId));
+                this.store.markSeen(items.items.map(i => i.videoId));
                 for (const item of fresh) {
                     if (leads.length >= cap || this.disposed)
                         break;

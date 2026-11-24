@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readConfig } from '../dist/config.js'
 import { FollowEngine } from '../dist/engine.js'
+import { pickUnseen } from '../dist/browser.js'
 import { costOf, DEFAULT_PRICING, normalizeModel, parsePricing, ratesFor } from '../dist/pricing.js'
 import { inSchedule, inWindows, isPeakBeijing, nextOpenAt, normalizeWindow, parseWindow } from '../dist/schedule.js'
 import { FollowStore, sanitizePrefs } from '../dist/store.js'
@@ -32,6 +33,15 @@ await store2.load()
 assert.equal(store2.hasSeen('v1'), true)
 assert.equal(store2.state.leads.length, 1)
 assert.deepEqual(store2.state.usage.total, { calls: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, costCny: 0 })
+
+// 1b. 回归：跟进只挑「没看过」的前 N 条——前排全看过时须取到更深的未看结果
+const mkItem = id => ({ videoId: id, url: `https://www.douyin.com/video/${id}`, title: 't', author: 'a' })
+const seenSet = new Set(['v1', 'v2', 'v3', 'v4', 'v5', 'v6'])
+const resultList = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'].map(mkItem)
+assert.deepEqual(pickUnseen(resultList, id => seenSet.has(id), 3).map(i => i.videoId), ['v7', 'v8', 'v9'])
+assert.equal(pickUnseen(resultList, id => seenSet.has(id), 99).length, 3)
+assert.deepEqual(pickUnseen(resultList, () => false, 2).map(i => i.videoId), ['v1', 'v2'])
+assert.equal(pickUnseen(resultList, () => true, 3).length, 0)
 
 // 2. overall 重算规则
 assert.equal(overallOf([]), 'unverified')

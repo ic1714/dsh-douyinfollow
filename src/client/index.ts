@@ -266,7 +266,7 @@ function FollowPanel() {
     snap.human.error && h('div', { style: { color: '#f85149', fontSize: 12 } }, snap.human.error),
     snap.human.checking && h('div', { style: { color: '#d29922', fontSize: 12 } }, '已打开验证窗口：如出现滑块/点选请完成一次；完成后自动判定，也可点「我已完成验证」立即复核。点「取消验证」或直接关窗会立即结束本次验证、可马上重试。判定通过后窗口自动缩到右下角并保留会话供跟进复用。'),
     !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? '') && h('div', { style: { color: '#d29922', fontSize: 12 } }, '上次跟进被抖音风控拦截：点「过验证」人工完成一次，之后自动跟进通常即可恢复。'),
-    snap.patrol.last && !snap.patrol.last.error && snap.patrol.last.added === 0 && snap.patrol.last.found > 0 && h('div', { style: { opacity: 0.6, fontSize: 12 } }, '本次跟进无新线索：搜索结果都已看过（看过的视频不重复核实，省花费）。关键词下出现新视频时会自动核实推送；也可在「设置」里加关键词扩大覆盖。'),
+    snap.patrol.last && !snap.patrol.last.error && snap.patrol.last.added === 0 && snap.patrol.last.found > 0 && h('div', { style: { opacity: 0.6, fontSize: 12 } }, `本次跟进无新线索：已往下翻找 ${snap.patrol.last.found} 条结果，都已看过（看过的视频不重复核实，省花费）。关键词下出现新视频时会自动核实推送；也可在「设置」里加关键词扩大覆盖。`),
     actErr && h('div', { style: { color: '#f85149', fontSize: 12 } }, `未执行：${actErr}`),
     err && h('div', { style: { color: '#f85149', fontSize: 12 } }, `连接异常：${err}`),
     snap.leadsPending > 0 && h('div', { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} 条线索正在核实编排中…`),

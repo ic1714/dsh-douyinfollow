@@ -2,6 +2,17 @@ import { mkdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+/** 从搜索结果里按顺序挑前 want 条「没看过」的；看过的判定由调用方注入（持久化 seen 账本）。 */
+export function pickUnseen(items, isSeen, want) {
+    const out = [];
+    for (const it of items) {
+        if (out.length >= want)
+            break;
+        if (!isSeen(it.videoId))
+            out.push(it);
+    }
+    return out;
+}
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const rand = (min, max) => min + Math.random() * (max - min);
 const LOGIN_COOKIES = ['sessionid_ss', 'sessionid', 'passport_auth_status'];
@@ -450,7 +461,7 @@ export class DouyinBrowser {
             this.humanCancel = true;
     }
     /** 搜索话题视频，返回去重前的候选列表。 */
-    async search(keyword, limit) {
+    async search(keyword, limit, isSeen) {
         const ctx = await this.ensure(this.opts.headlessPatrol, !this.opts.headlessPatrol);
         const page = await ctx.newPage();
         try {
@@ -465,37 +476,57 @@ export class DouyinBrowser {
             }
             await page.waitForSelector('a[href*="/video/"]', { timeout: 30000 }).catch(() => undefined);
             await this.pace();
-            await page.mouse.wheel(0, 600).catch(() => undefined);
-            await sleep(rand(800, 1600));
-            const items = await page.evaluate(() => {
-                const out = [];
-                const seen = new Set();
-                const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
-                for (const a of anchors) {
-                    const href = a.href || '';
-                    const m = href.match(/\/video\/(\d+)/);
-                    if (!m || seen.has(m[1]))
-                        continue;
-                    seen.add(m[1]);
-                    const card = a.closest('li') ?? a.closest('[data-e2e]') ?? a.parentElement?.parentElement ?? a;
-                    const text = (card.textContent || '').replace(/\s+/g, ' ').trim();
-                    const title = (a.getAttribute('aria-label') || a.textContent || '').replace(/\s+/g, ' ').trim();
-                    const authorEl = card.querySelector('[data-e2e="search-card-author-name"], [class*="author-name"], [class*="authorName"]');
-                    const author = (authorEl?.textContent || '').trim();
-                    const pm = text.match(/(\d+分钟前|\d+小时前|\d+天前|\d+周前|\d+个月前|\d+月前|昨天|前天|\d{4}-\d{2}-\d{2})/);
-                    out.push({ videoId: m[1], url: `https://www.douyin.com/video/${m[1]}`, title: title || text.slice(0, 80), author, publishText: pm?.[1] });
+            // 往下翻找：只取「没看过」的前 limit 条；看过的前排不再挡住新线索。
+            // 连续两轮翻不出新结果即认为到底，避免空转。
+            const all = [];
+            const ids = new Set();
+            const seenFn = isSeen ?? (() => false);
+            let stagnant = 0;
+            for (let round = 0; round < 8; round++) {
+                const prev = all.length;
+                await page.mouse.wheel(0, round === 0 ? 600 : 1400).catch(() => undefined);
+                await sleep(rand(800, 1600));
+                const batch = await page.evaluate(() => {
+                    const out = [];
+                    const seen = new Set();
+                    const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+                    for (const a of anchors) {
+                        const href = a.href || '';
+                        const m = href.match(/\/video\/(\d+)/);
+                        if (!m || seen.has(m[1]))
+                            continue;
+                        seen.add(m[1]);
+                        const card = a.closest('li') ?? a.closest('[data-e2e]') ?? a.parentElement?.parentElement ?? a;
+                        const text = (card.textContent || '').replace(/\s+/g, ' ').trim();
+                        const title = (a.getAttribute('aria-label') || a.textContent || '').replace(/\s+/g, ' ').trim();
+                        const authorEl = card.querySelector('[data-e2e="search-card-author-name"], [class*="author-name"], [class*="authorName"]');
+                        const author = (authorEl?.textContent || '').trim();
+                        const pm = text.match(/(\d+分钟前|\d+小时前|\d+天前|\d+周前|\d+个月前|\d+月前|昨天|前天|\d{4}-\d{2}-\d{2})/);
+                        out.push({ videoId: m[1], url: `https://www.douyin.com/video/${m[1]}`, title: title || text.slice(0, 80), author, publishText: pm?.[1] });
+                    }
+                    return out;
+                });
+                for (const it of batch) {
+                    if (!ids.has(it.videoId)) {
+                        ids.add(it.videoId);
+                        all.push(it);
+                    }
                 }
-                return out;
-            });
-            if (items.length === 0 && await this.captchaHit(page)) {
-                throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试');
+                if (round === 0 && all.length === 0) {
+                    if (await this.captchaHit(page)) {
+                        throw new Error('抖音风控验证码：点面板「过验证」人工完成一次后重试');
+                    }
+                    const wall = await page.evaluate(() => /登录|扫码/.test((document.body?.innerText || '').slice(0, 1500))).catch(() => false);
+                    if (wall)
+                        throw new Error('抖音登录态失效：请点面板「扫码登录」重新登录');
+                }
+                if (pickUnseen(all, seenFn, limit).length >= limit)
+                    break;
+                stagnant = all.length === prev ? stagnant + 1 : 0;
+                if (stagnant >= 2)
+                    break;
             }
-            if (items.length === 0) {
-                const wall = await page.evaluate(() => /登录|扫码/.test((document.body?.innerText || '').slice(0, 1500))).catch(() => false);
-                if (wall)
-                    throw new Error('抖音登录态失效：请点面板「扫码登录」重新登录');
-            }
-            return items.slice(0, limit);
+            return { items: pickUnseen(all, seenFn, limit), scanned: all.length };
         }
         finally {
             await this.closeTab(page);
