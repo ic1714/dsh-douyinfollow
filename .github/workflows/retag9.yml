@@ -39,17 +39,16 @@ jobs:
             curl -s --max-time 30 -o /dev/null -w 'delete_release=%{http_code}\n' -X DELETE -H "$AUTH" "$API/releases/$rid"
           fi
           curl -s --max-time 30 -o /dev/null -w 'delete_ref=%{http_code}\n' -X DELETE -H "$AUTH" "$API/git/refs/tags/0.2.2_v1.1"
-          cat > notes-v1.1.md <<'EOF'
-新增功能：
-1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限
-2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage
-3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查
-4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明
-修改了已知的bug：
-1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住
-2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册
-3. 文案旧词「巡查」统一为「跟进 / 搜索」
-EOF
+          printf '%s\n' \
+            '新增功能：' \
+            '1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限' \
+            '2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage' \
+            '3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查' \
+            '4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明' \
+            '修改了已知的bug：' \
+            '1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住' \
+            '2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册' \
+            '3. 文案旧词「巡查」统一为「跟进 / 搜索」' > notes-v1.1.md
           newrid=$(curl -s --max-time 30 -X POST -H "$AUTH" "$API/releases" \
             -d "{\"tag_name\":\"0.2.2_v1.1\",\"name\":\"0.2.2_v1.1\",\"target_commitish\":\"$SHA\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r '.id // empty')
           echo "new rid=$newrid"
