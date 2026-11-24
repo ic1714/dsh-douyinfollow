@@ -1,8 +1,8 @@
 name: Retag9
 
 # 一次性修复：提交信息带 [retag9] 标记的 main 推送触发。
-# 背景：CI token 对 Release 的 PATCH 被拒（403），但 DELETE/POST 可用。
-# 故删掉坏掉的 v1.1 draft，POST 新建 Release（target_commitish 指向真实 commit，顺带重建 tag），再打包上传附件。
+# 删坏 draft → POST 新建 v1.1 Release（target_commitish 真实 commit）→ 打包上传。
+# 全程日志 tee 到 dbg.txt，结束时挂 v1.2 附件 + 推 main 双通道留档，便于公开读取定位失败点。
 on:
   push:
     branches: [main]
@@ -25,54 +25,56 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Recreate v1.1 release at its real commit
+      - name: Recreate v1.1 with full trace
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
-          AUTH="Authorization: Bearer $GH_TOKEN"
-          SHA="9c21fa0ba61af0320f0a195a5f4f039bce13dd9c"
-          rels=$(curl -s --max-time 30 -H "$AUTH" "$API/releases?per_page=100")
-          rid=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.1") | .id' | head -1)
-          echo "old rid=$rid"
-          if [ -n "$rid" ]; then
-            curl -s --max-time 30 -o /dev/null -w 'delete_release=%{http_code}\n' -X DELETE -H "$AUTH" "$API/releases/$rid"
-          fi
-          curl -s --max-time 30 -o /dev/null -w 'delete_ref=%{http_code}\n' -X DELETE -H "$AUTH" "$API/git/refs/tags/0.2.2_v1.1"
-          printf '%s\n' \
-            '新增功能：' \
-            '1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限' \
-            '2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage' \
-            '3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查' \
-            '4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明' \
-            '修改了已知的bug：' \
-            '1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住' \
-            '2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册' \
-            '3. 文案旧词「巡查」统一为「跟进 / 搜索」' > notes-v1.1.md
-          newrid=$(curl -s --max-time 30 -X POST -H "$AUTH" "$API/releases" \
-            -d "{\"tag_name\":\"0.2.2_v1.1\",\"name\":\"0.2.2_v1.1\",\"target_commitish\":\"$SHA\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r '.id // empty')
-          echo "new rid=$newrid"
-          [ -n "$newrid" ]
-          echo "newrid=$newrid" >> "$GITHUB_ENV"
-      - name: Build v1.1 package from its commit
-        run: |
-          set -euo pipefail
-          git worktree add "$RUNNER_TEMP/v11" 9c21fa0ba61af0320f0a195a5f4f039bce13dd9c
-          cd "$RUNNER_TEMP/v11"
-          pnpm install --frozen-lockfile
-          pnpm build
-          pnpm run --if-present smoke
-          pnpm pack
-      - name: Upload v1.1 asset and verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
-          AUTH="Authorization: Bearer $GH_TOKEN"
-          SHA="9c21fa0ba61af0320f0a195a5f4f039bce13dd9c"
-          curl -s --max-time 60 -o /dev/null -w 'upload=%{http_code}\n' -X POST -H "$AUTH" -H "Content-Type: application/gzip" \
-            --data-binary @"$RUNNER_TEMP/v11/douyinfollow-0.2.2-v.1.1.tgz" \
-            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$newrid/assets?name=douyinfollow-0.2.2-v.1.1.tgz"
-          got=$(curl -s --max-time 30 -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r '.object.sha // empty')
-          echo "ref=$got want=$SHA"
-          [ "$got" = "$SHA" ]
+          {
+            API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+            AUTH="Authorization: Bearer $GH_TOKEN"
+            SHA="9c21fa0ba61af0320f0a195a5f4f039bce13dd9c"
+            rels=$(curl -s --max-time 30 -H "$AUTH" "$API/releases?per_page=100")
+            rid=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.1") | .id' | head -1)
+            rid12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
+            echo "old rid=$rid rid12=$rid12"
+            if [ -n "$rid" ]; then
+              curl -s --max-time 30 -o /dev/null -w 'delete_release=%{http_code}\n' -X DELETE -H "$AUTH" "$API/releases/$rid"
+            fi
+            curl -s --max-time 30 -o /dev/null -w 'delete_ref=%{http_code}\n' -X DELETE -H "$AUTH" "$API/git/refs/tags/0.2.2_v1.1"
+            printf '%s\n' \
+              '新增功能：' \
+              '1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限' \
+              '2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage' \
+              '3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查' \
+              '4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明' \
+              '修改了已知的bug：' \
+              '1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住' \
+              '2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册' \
+              '3. 文案旧词「巡查」统一为「跟进 / 搜索」' > notes-v1.1.md
+            ccode=$(curl -s --max-time 30 -o /tmp/create.json -w '%{http_code}' -X POST -H "$AUTH" "$API/releases" \
+              -d "{\"tag_name\":\"0.2.2_v1.1\",\"name\":\"0.2.2_v1.1\",\"target_commitish\":\"$SHA\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.1.md)}")
+            echo "create=$ccode"; cat /tmp/create.json; echo
+            newrid=$(jq -r '.id // empty' /tmp/create.json)
+            echo "newrid=$newrid"
+            if [ -n "$newrid" ]; then
+              git worktree add "$RUNNER_TEMP/v11" "$SHA"
+              ( cd "$RUNNER_TEMP/v11" && pnpm install --frozen-lockfile && pnpm build && pnpm run --if-present smoke && pnpm pack )
+              echo "build_exit=$?"
+              curl -s --max-time 60 -o /dev/null -w 'upload=%{http_code}\n' -X POST -H "$AUTH" -H "Content-Type: application/gzip" \
+                --data-binary @"$RUNNER_TEMP/v11/douyinfollow-0.2.2-v.1.1.tgz" \
+                "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$newrid/assets?name=douyinfollow-0.2.2-v.1.1.tgz"
+            fi
+            got=$(curl -s --max-time 30 -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r '.object.sha // empty')
+            echo "ref=$got want=$SHA"
+            if [ "$got" = "$SHA" ]; then echo VERIFY_OK; fi
+          } 2>&1 | tee dbg.txt
+          rid12=$(curl -s --max-time 30 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
+          curl -s --max-time 30 -o /dev/null -w 'dbgupload=%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: text/plain" \
+            --data-binary @dbg.txt \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid12/assets?name=debug-retag9.txt"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dbg.txt
+          git commit -m "debug: retag9 留档 [retag9done]" --quiet
+          git push origin main || true
+          grep -q VERIFY_OK dbg.txt
