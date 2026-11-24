@@ -1,6 +1,6 @@
 {
   "name": "douyinfollow",
-  "version": "1.1.0",
+  "version": "0.2.2-v.1.1",
   "description": "跟进选定内容的实时进展。",
   "type": "module",
   "main": "dist/index.js",

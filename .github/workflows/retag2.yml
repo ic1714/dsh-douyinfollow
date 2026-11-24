@@ -1,7 +1,7 @@
-name: Retag
+name: Retag2
 
-# 一次性整理：提交信息带 [retag] 标记的 main 推送触发。
-# 删除旧 Release/tag，只保留最初版 v1.0 与最新版 v1.1（API 建 ref，不触发 push 事件）。
+# 一次性整理：提交信息带 [retag2] 标记的 main 推送触发。
+# 把 v1.0/v1.1 两个 Release/tag 重命名为 DSH 基线+产品版本：0.2.2_v1.0 / 0.2.2_v1.1。
 on:
   push:
     branches: [main]
@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  retag:
-    if: ${{ contains(github.event.head_commit.message, '[retag]') }}
+  retag2:
+    if: ${{ contains(github.event.head_commit.message, '[retag2]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,30 +28,30 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke
       - run: pnpm pack
-      - name: Rebuild two-release layout
+      - name: Rename releases to DSH-base naming
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           API="https://api.github.com/repos/$GITHUB_REPOSITORY"
           AUTH="Authorization: Bearer $GH_TOKEN"
-          # 1) 先取回最初版安装包，再删旧 Release 与 tag
-          rid=$(curl -sf -H "$AUTH" "$API/releases/tags/0.2.1" | jq -r .id)
+          # 1) 取回最初版安装包与初始 commit，再删 v1.0/v1.1 的 Release 与 tag
+          rid=$(curl -sf -H "$AUTH" "$API/releases/tags/v1.0" | jq -r .id)
           curl -sfL -o initial.tgz "$(curl -sf -H "$AUTH" "$API/releases/$rid/assets" | jq -r '.[0].browser_download_url')"
-          for t in 0.2.1 0.2.2_v2 0.2.2_v3 0.2.2_v4 0.2.2_v5; do
+          init_sha=$(git rev-list -n1 v1.0)
+          cur_sha=$(git rev-parse HEAD)
+          for t in v1.0 v1.1; do
             rid=$(curl -sf -H "$AUTH" "$API/releases/tags/$t" | jq -r .id || true)
             if [ -n "${rid:-}" ] && [ "$rid" != "null" ]; then
               curl -sf -X DELETE -H "$AUTH" "$API/releases/$rid"
               echo "removed release $t"
             fi
-            curl -sf -X DELETE -H "$AUTH" "$API/git/ref/tags/$t" || true
+            git push origin --delete "refs/tags/$t" || true
           done
-          # 2) API 建 tag ref（不产生 push 事件，避免与 release.yml 抢跑）
-          init_sha=$(git rev-list -n1 0.2.1)
-          cur_sha=$(git rev-parse HEAD)
-          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/v1.0\",\"sha\":\"$init_sha\"}"
-          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/v1.1\",\"sha\":\"$cur_sha\"}"
-          # 3) 两个 Release，普通软件更新说明格式
+          # 2) API 建 tag ref（不产生 push 事件）
+          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/0.2.2_v1.0\",\"sha\":\"$init_sha\"}"
+          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/0.2.2_v1.1\",\"sha\":\"$cur_sha\"}"
+          # 3) 两个 Release，编号列表更新说明
           cat > notes-v1.0.md <<'EOF'
           新增功能：
           1. DSH 空闲时自动搜索抖音话题视频，后台小窗运行不抢焦点
@@ -74,11 +74,11 @@ jobs:
           3. 文案旧词「巡查」统一为「跟进 / 搜索」
           EOF
           rid0=$(curl -sf -X POST -H "$AUTH" "$API/releases" \
-            -d "{\"tag_name\":\"v1.0\",\"name\":\"v1.0\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.0.md)}" | jq -r .id)
+            -d "{\"tag_name\":\"0.2.2_v1.0\",\"name\":\"0.2.2_v1.0\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.0.md)}" | jq -r .id)
           curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @initial.tgz \
             "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid0/assets?name=douyinfollow-0.2.1.tgz"
           rid1=$(curl -sf -X POST -H "$AUTH" "$API/releases" \
-            -d "{\"tag_name\":\"v1.1\",\"name\":\"v1.1\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"true\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r .id)
-          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @douyinfollow-1.1.0.tgz \
-            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid1/assets?name=douyinfollow-1.1.0.tgz"
-          echo "done: v1.0=$rid0 v1.1=$rid1"
+            -d "{\"tag_name\":\"0.2.2_v1.1\",\"name\":\"0.2.2_v1.1\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"true\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r .id)
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @douyinfollow-0.2.2-v.1.1.tgz \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid1/assets?name=douyinfollow-0.2.2-v.1.1.tgz"
+          echo "done: 0.2.2_v1.0=$rid0 0.2.2_v1.1=$rid1"
