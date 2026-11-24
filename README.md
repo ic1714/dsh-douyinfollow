@@ -66,7 +66,7 @@
 
 1. 获取插件（任选其一）：
    - 在本仓库 GitHub 页面点 Code → Download ZIP，解压，记住含 `package.json` 的那层文件夹路径；
-   - 或下载仓库根目录的 `.tgz` 安装包（当前为 `douyinfollow-0.3.0.tgz`）；
+   - 或下载仓库根目录的 `.tgz` 安装包（当前为 `douyinfollow-0.2.2-v.2.tgz`，对外标签 `0.2.2_v2`）；
    - 或开发者直接 clone 本仓库。
 2. 打开 DSH 桌面端 → 左栏「插件」→「+ 添加插件」。
 3. 粘贴插件目录的绝对路径（或 `.tgz` 路径）→「安装」→「立即启用」→ 确认开关为 ON。
@@ -80,7 +80,7 @@ dsh plugin --profile web add github:ic1714/dsh-douyinfollow
 # 或本地目录（ZIP 解压 / clone 后的路径）
 dsh plugin --profile web add /path/to/douyinfollow
 # 或预构建 tarball
-dsh plugin --profile web add ./douyinfollow-0.3.0.tgz
+dsh plugin --profile web add ./douyinfollow-0.2.2-v.2.tgz
 ```
 
 ## 首次使用
@@ -184,7 +184,7 @@ DSH 纯按量计费，本插件把**自己派发的核实会话**的消耗精确
 - 峰谷判定不内置法定节假日日历（按周一~周五判峰时）；官方调价后需更新 `pricingJson` 或插件默认价格表。
 - 验证状态：已在真实桌面端（0.2.2-rc.1）端到端 live 验证（2026-11-21）：entry 激活、tab 注册、面板取数与配置写回、扫码登录、风控识别与人工过验证、有头小窗搜索（found=6）、采集（标题/文案/关键帧 OCR）、Schedule 派发独立核实会话、`douyin_follow_publish` 回写 5 张卡片（含 verified / contradicted / unverified 与权威来源链接、营销话术归类）全链路通过；确定性逻辑通过 `scripts/smoke.mjs` 自测。个别视频页仍可能单独命中风控，该条采集降级记录错误、不影响同批其他视频。
 - 打扰/性能治理验证（2026-11-22）：启动后插件 Edge 进程数 = 0（读盘判定登录态）；跟进期间前台焦点保持在用户应用（不被 Edge 抢走）；「还原页面/意外关闭」崩溃对话框已抑制；最小化窗口经 Win32 恢复后缩角置底。无头/屏外/最小化三种隐藏方式均实测被风控拦截，故保留「有头可见但置底小窗」方案。Edge 崩溃/强杀后风控信任需一次人工过验证恢复。
-- 0.3.0（2026-11-24）：跟进时间段（跨午夜/边界/周末峰谷/下次开窗）、峰谷计价（缓存分桶/价格表覆盖）、用量归属与入账的确定性逻辑全部通过 `scripts/smoke.mjs`；桌面端 live 验证待重启加载新版后进行。
+- 0.2.2-v.2 / 标签 0.2.2_v2（2026-11-24）：跟进时间段（跨午夜/边界/周末峰谷/下次开窗）、峰谷计价（缓存分桶/价格表覆盖）、用量归属与入账的确定性逻辑全部通过 `scripts/smoke.mjs`；桌面端 live 验证待重启加载新版后进行。
 - 启动报 `web boot: 1 entry did not activate / douyinfollow: failed` 时：查看 `%APPDATA%\@deepseek-ai\dsh-desktop\logs\crash-*-web-boot.log` 的 renderer console 段，本插件激活失败会打印 `[follow-apply]` 错误栈；也可在崩溃对话框选「禁用第三方插件、备份 profile patch 并重启」先恢复应用。
 
 ## 开发
@@ -199,6 +199,8 @@ pnpm pack            # 生成可安装的 .tgz（打包前自动重新构建）
 ```
 
 修改 `src/` 后请执行 `pnpm build`，并把更新后的 `dist/` 随源码一并提交，保证 github: / ZIP 安装的用户直接拿到新版本。
+
+**版本号规范**：DSH 兼容版本 + 插件迭代号。npm 包版本须为合法 semver，写作 `0.2.2-v.2`（预发布格式，数字段保证 v2 < v3 < … < v10 排序正确）；对外标签 / git tag 用 `0.2.2_v2`。每次插件发版迭代号 +1；DSH 升到 0.3 后从 `0.3.0-v.1` 重新计。
 
 目录：`src/index.ts` 入口；`config/store/idle/browser/ocr/engine/tools/routes` 宿主各层；`schedule.ts` 时间段与峰谷判定；`pricing.ts` 价格表与计价；`usage.ts` 用量归属与花费统计；`src/client/index.ts` 侧栏面板；`cordis.patch.yml` 组合补丁；`scripts/build-client.mjs` 客户端打包。
 
