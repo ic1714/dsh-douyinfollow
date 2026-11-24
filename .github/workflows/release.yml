@@ -28,12 +28,15 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             tags=$(jq -cn --arg t "$GITHUB_REF_NAME" '[$t]')
           else
-            have=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r '.[].tag_name')
+            rels=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100")
             miss=()
             while IFS= read -r t; do
               [ -n "$t" ] || continue
-              if ! printf '%s\n' "$have" | grep -qx "$t"; then miss+=("$t"); fi
+              want="douyinfollow-$(git show "$t:package.json" | jq -r .version).tgz"
+              got=$(printf '%s' "$rels" | jq -r --arg t "$t" '.[] | select(.tag_name==$t) | .assets[].name' | sort)
+              # 缺 Release、或附件不等于该版本自己的安装包（多挂/错挂）都重发修复
+              if [ "$got" != "$want" ]; then miss+=("$t"); fi
             done < <(git tag -l | sort)
             tags=$(jq -cn --args '$ARGS.positional' "${miss[@]}")
           fi
@@ -65,6 +68,8 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke
       - run: pnpm pack
+      - id: pkg
+        run: echo "tgz=douyinfollow-$(jq -r .version package.json).tgz" >> "$GITHUB_OUTPUT"
       - name: Release notes from tag annotation
         run: |
           git tag -l --format='%(contents)' "${{ matrix.tag }}" > "$RUNNER_TEMP/notes.md"
@@ -76,6 +81,21 @@ jobs:
           tag_name: ${{ matrix.tag }}
           name: ${{ matrix.tag }}
           body_path: ${{ runner.temp }}/notes.md
-          files: douyinfollow-*.tgz
+          files: ${{ steps.pkg.outputs.tgz }}
           fail_on_unmatched_files: true
           prerelease: false
+      - name: Prune mismatched assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rid=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/${{ matrix.tag }}" | jq -r .id)
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$rid/assets" \
+            | jq -r --arg w "${{ steps.pkg.outputs.tgz }}" '.[] | select(.name != $w) | .id' \
+            | while IFS= read -r aid; do
+                curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$aid"
+                echo "pruned asset $aid"
+              done
