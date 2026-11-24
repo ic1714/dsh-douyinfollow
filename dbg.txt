@@ -1,11 +1,4 @@
-old rid= rid12=456943273
+old rid=
 delete_ref=422
-create=403
-{
-  "message": "Resource not accessible by integration",
-  "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release",
-  "status": "403"
-}
-
-newrid=
+build_exit=0
 ref= want=9c21fa0ba61af0320f0a195a5f4f039bce13dd9c
