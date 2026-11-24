@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   plan:
-    if: ${{ !github.event.deleted }}
+    if: ${{ !github.event.deleted && !contains(github.event.head_commit.message, '[retag]') }}
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.plan.outputs.tags }}
@@ -98,4 +98,26 @@ jobs:
                 curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
                   "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$aid"
                 echo "pruned asset $aid"
+              done
+      - name: Keep only initial and current release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cur="${{ matrix.tag }}"
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq -r --arg cur "$cur" '.[] | select(.tag_name != "v1.0" and .tag_name != $cur) | .id' \
+            | while IFS= read -r rid; do
+                curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$rid"
+                echo "removed release $rid"
+              done
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" \
+            | jq -r --arg cur "$cur" '.[].ref | select(. != "refs/tags/v1.0" and . != ("refs/tags/" + $cur))' \
+            | while IFS= read -r ref; do
+                curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/${ref#refs/tags/}"
+                echo "removed tag $ref"
               done

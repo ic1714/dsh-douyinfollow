@@ -1,0 +1,84 @@
+name: Retag
+
+# 一次性整理：提交信息带 [retag] 标记的 main 推送触发。
+# 删除旧 Release/tag，只保留最初版 v1.0 与最新版 v1.1（API 建 ref，不触发 push 事件）。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  retag:
+    if: ${{ contains(github.event.head_commit.message, '[retag]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm smoke
+      - run: pnpm pack
+      - name: Rebuild two-release layout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GH_TOKEN"
+          # 1) 先取回最初版安装包，再删旧 Release 与 tag
+          rid=$(curl -sf -H "$AUTH" "$API/releases/tags/0.2.1" | jq -r .id)
+          curl -sfL -o initial.tgz "$(curl -sf -H "$AUTH" "$API/releases/$rid/assets" | jq -r '.[0].browser_download_url')"
+          for t in 0.2.1 0.2.2_v2 0.2.2_v3 0.2.2_v4 0.2.2_v5; do
+            rid=$(curl -sf -H "$AUTH" "$API/releases/tags/$t" | jq -r .id || true)
+            if [ -n "${rid:-}" ] && [ "$rid" != "null" ]; then
+              curl -sf -X DELETE -H "$AUTH" "$API/releases/$rid"
+              echo "removed release $t"
+            fi
+            curl -sf -X DELETE -H "$AUTH" "$API/git/ref/tags/$t" || true
+          done
+          # 2) API 建 tag ref（不产生 push 事件，避免与 release.yml 抢跑）
+          init_sha=$(git rev-list -n1 0.2.1)
+          cur_sha=$(git rev-parse HEAD)
+          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/v1.0\",\"sha\":\"$init_sha\"}"
+          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/v1.1\",\"sha\":\"$cur_sha\"}"
+          # 3) 两个 Release，普通软件更新说明格式
+          cat > notes-v1.0.md <<'EOF'
+          新增功能：
+          1. DSH 空闲时自动搜索抖音话题视频，后台小窗运行不抢焦点
+          2. 视频只作线索：独立核实会话交叉查证事实点，卡片标注核实结论与权威来源链接
+          3. 右栏「抖音跟进」面板卡片流推送，4 秒轮询即时刷新
+          4. 扫码登录、风控识别与人工过验证，登录态长期保留
+          5. 只读边界：不点赞、不评论、不关注、不发布
+          修改了已知的bug：
+          1. 无（首个公开版本）
+          EOF
+          cat > notes-v1.1.md <<'EOF'
+          新增功能：
+          1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限
+          2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage
+          3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查
+          4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明
+          修改了已知的bug：
+          1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住
+          2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册
+          3. 文案旧词「巡查」统一为「跟进 / 搜索」
+          EOF
+          rid0=$(curl -sf -X POST -H "$AUTH" "$API/releases" \
+            -d "{\"tag_name\":\"v1.0\",\"name\":\"v1.0\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.0.md)}" | jq -r .id)
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @initial.tgz \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid0/assets?name=douyinfollow-0.2.1.tgz"
+          rid1=$(curl -sf -X POST -H "$AUTH" "$API/releases" \
+            -d "{\"tag_name\":\"v1.1\",\"name\":\"v1.1\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"true\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r .id)
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @douyinfollow-1.1.0.tgz \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid1/assets?name=douyinfollow-1.1.0.tgz"
+          echo "done: v1.0=$rid0 v1.1=$rid1"
