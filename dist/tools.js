@@ -17,20 +17,21 @@ function leadView(l) {
         ocrText: l.ocrText?.slice(0, 1200),
     };
 }
-/** 面向模型的工具：巡查、线索、核实回写、卡片管理、登录。 */
+/** 面向模型的工具：跟进、线索、核实回写、卡片管理、登录、花费。 */
 export function registerTools(ctx, engine) {
     ctx.tools.register(defineTool({
         name: 'douyin_follow_status',
-        description: '查看抖音跟进状态：登录态、空闲情况、巡查进度、待核实线索数、最近卡片与巡查记录。',
+        description: '查看抖音跟进状态：登录态、空闲情况、跟进进度、待核实线索数、最近卡片与跟进记录、花费。',
         parameters: {},
         output: {
             schema: { type: 'json' },
             render: (_args, value) => {
                 const s = value;
                 return text([
-                    `启用=${s.enabled} 登录=${s.login.loggedIn} 空闲=${s.idle.idle} 巡查中=${s.patrol.running}`,
+                    `启用=${s.enabled} 登录=${s.login.loggedIn} 空闲=${s.idle.idle} 跟进中=${s.patrol.running}`,
                     `关键词=${s.keywords.join('、') || '(未设置)'} 间隔=${s.intervalMinutes}分钟 待核实=${s.leadsPending}`,
-                    s.patrol.last ? `上次巡查：新增${s.patrol.last.added}/发现${s.patrol.last.found}${s.patrol.last.error ? ' 错误=' + s.patrol.last.error : ''}` : '尚未巡查',
+                    s.patrol.last ? `上次跟进：新增${s.patrol.last.added}/发现${s.patrol.last.found}${s.patrol.last.error ? ' 错误=' + s.patrol.last.error : ''}` : '尚未跟进',
+                    `今日花费=¥${s.usage.today.costCny.toFixed(4)} 累计花费=¥${s.usage.total.costCny.toFixed(4)}`,
                 ].join('\n'));
             },
         },
@@ -40,7 +41,7 @@ export function registerTools(ctx, engine) {
     }));
     ctx.tools.register(defineTool({
         name: 'douyin_follow_patrol',
-        description: '立即触发一次抖音话题巡查（后台执行）：搜索关键词相关新视频，采集标题/文案/AI讲解/画面文字，生成待核实线索并派发核实会话。',
+        description: '立即触发一次抖音话题跟进（后台执行，不受时间段设置限制）：搜索关键词相关新视频，采集标题/文案/AI讲解/画面文字，生成待核实线索并派发核实会话。',
         parameters: {
             reason: { type: 'string', description: '触发原因（可选，仅记录）' },
         },
@@ -48,7 +49,7 @@ export function registerTools(ctx, engine) {
             schema: { type: 'json' },
             render: (_args, value) => {
                 const v = value;
-                return text(v.started ? `巡查已启动：${v.patrolId}` : `未启动：${v.reason}`);
+                return text(v.started ? `跟进已启动：${v.patrolId}` : `未启动：${v.reason}`);
             },
         },
         async execute() {
@@ -59,7 +60,7 @@ export function registerTools(ctx, engine) {
         name: 'douyin_follow_leads',
         description: '读取待核实线索（视频标题/文案/AI讲解/画面文字）。核实编排员按 batchId 取本批次线索。',
         parameters: {
-            batchId: { type: 'string', description: '巡查批次 id（可选；缺省返回全部待核实）' },
+            batchId: { type: 'string', description: '跟进批次 id（可选；缺省返回全部待核实）' },
             status: { type: 'string', enum: ['pending', 'verifying', 'published', 'skipped'], description: '按状态过滤（可选）' },
         },
         output: {
@@ -203,6 +204,27 @@ export function registerTools(ctx, engine) {
         },
         async execute(args) {
             return engine.dispatchVerify(args.batchId);
+        },
+    }));
+    ctx.tools.register(defineTool({
+        name: 'douyin_follow_usage',
+        description: '查看抖音跟进核实会话的 token 用量与花费：今日 / 近7天 / 累计，以及最近批次明细。花费按 DeepSeek 官方 API 价格计算（峰谷自动判定，谷时半价），只统计本插件派发的核实会话。',
+        parameters: {},
+        output: {
+            schema: { type: 'json' },
+            render: (_args, value) => {
+                const u = value;
+                const fmt = (t) => `${t.calls}次调用 ¥${t.costCny.toFixed(4)}（输入未命中${t.inputTokens} 缓存命中${t.cacheReadTokens} 输出${t.outputTokens}）`;
+                return text([
+                    `今日：${fmt(u.today)}`,
+                    `近7天：${fmt(u.last7)}`,
+                    `累计：${fmt(u.total)}`,
+                    ...u.batches.slice(0, 5).map(b => `批次 ${b.batchId.slice(0, 8)}：${b.calls}次 ¥${b.costCny.toFixed(4)}${b.model ? ' ' + b.model : ''}`),
+                ].join('\n'));
+            },
+        },
+        async execute() {
+            return json(engine.usage.view());
         },
     }));
 }

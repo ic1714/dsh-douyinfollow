@@ -121,12 +121,23 @@ function fmtTime(ts) {
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+function fmtTokens(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(n);
+}
+var MODE_PRESETS = [
+  { mode: "all", label: "\u5168\u5929" },
+  { mode: "offpeak", label: "\u8C37\u65F6\xB7\u534A\u4EF7" },
+  { mode: "peak", label: "\u5CF0\u65F6" },
+  { mode: "custom", label: "\u81EA\u5B9A\u4E49" }
+];
 function Badge({ status }) {
   return h("span", {
     style: { ...chip, background: `${BADGE_COLOR[status]}22`, color: BADGE_COLOR[status], border: `1px solid ${BADGE_COLOR[status]}55` }
   }, OVERALL_LABEL[status]);
 }
-function CardView({ card, open, onToggle, onAct }) {
+function CardView({ card, open, onToggle, onAct, batchCost }) {
   const face = h(
     "button",
     {
@@ -190,6 +201,7 @@ function CardView({ card, open, onToggle, onAct }) {
         "\u539F\u89C6\u9891\uFF1A",
         h("a", { style: link, href: card.video.url, target: "_blank", rel: "noreferrer" }, card.video.title || card.video.url)
       ),
+      typeof batchCost === "number" && h("div", { style: { fontSize: 12, opacity: 0.7 } }, `\u672C\u6279\u6838\u5B9E\u82B1\u8D39 \xA5${batchCost.toFixed(4)}\uFF08\u540C\u6279\u5361\u7247\u5171\u4EAB\uFF09`),
       h(
         "div",
         { style: { display: "flex", gap: 6 } },
@@ -209,11 +221,18 @@ function FollowPanel() {
   const [kwText, setKwText] = React.useState("");
   const [intText, setIntText] = React.useState("60");
   const [enCfg, setEnCfg] = React.useState(true);
+  const [modeCfg, setModeCfg] = React.useState("all");
+  const [winCfg, setWinCfg] = React.useState([]);
   React.useEffect(() => {
     if (showCfg && snap) {
       setKwText(snap.keywords.join("\uFF0C"));
       setIntText(String(snap.intervalMinutes));
       setEnCfg(snap.enabled);
+      setModeCfg(snap.scheduleMode);
+      setWinCfg(snap.activeWindows.map((w) => {
+        const [start, end] = w.split("-");
+        return { start: start ?? "", end: end ?? "" };
+      }));
     }
   }, [showCfg]);
   const load = React.useCallback(async () => {
@@ -259,7 +278,7 @@ function FollowPanel() {
       { style: { display: "flex", alignItems: "center", gap: 8 } },
       h("strong", { style: { fontSize: 14 } }, "\u6296\u97F3\u8DDF\u8FDB"),
       unread > 0 && h("span", { style: { ...chip, background: "#58a6ff22", color: "#58a6ff" } }, `${unread} \u672A\u8BFB`),
-      h("span", { style: { marginLeft: "auto", opacity: 0.6, fontSize: 11 } }, snap.patrol.running ? "\u5DE1\u67E5\u4E2D\u2026" : snap.idle.idle ? "\u7A7A\u95F2" : "\u5FD9")
+      h("span", { style: { marginLeft: "auto", opacity: 0.6, fontSize: 11 } }, snap.patrol.running ? "\u8DDF\u8FDB\u4E2D\u2026" : snap.idle.idle ? "\u7A7A\u95F2" : "\u5FD9")
     ),
     h(
       "div",
@@ -270,14 +289,16 @@ function FollowPanel() {
       snap.human.checking && h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("humanDone") }, "\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1"),
       h("button", { type: "button", style: btn, disabled: busy, onClick: () => void act("readAll") }, "\u5168\u90E8\u5DF2\u8BFB"),
       h("button", { type: "button", style: btn, onClick: () => setShowArchived((v) => !v) }, showArchived ? "\u9690\u85CF\u5F52\u6863" : "\u663E\u793A\u5F52\u6863"),
-      h("button", { type: "button", style: btn, onClick: () => setShowCfg((v) => !v) }, showCfg ? "\u6536\u8D77\u8BBE\u7F6E" : "\u5173\u952E\u8BCD\u8BBE\u7F6E")
+      h("button", { type: "button", style: btn, onClick: () => setShowCfg((v) => !v) }, showCfg ? "\u6536\u8D77\u8BBE\u7F6E" : "\u8BBE\u7F6E")
     ),
     h(
       "div",
       { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" } },
       h("span", { style: { ...chip, color: snap.login.loggedIn ? "#2ea043" : "#d29922" } }, snap.login.loggedIn ? "\u6296\u97F3\u5DF2\u767B\u5F55" : "\u6296\u97F3\u672A\u767B\u5F55"),
+      h("span", { style: { ...chip, color: "#58a6ff" } }, `\u4ECA\u65E5 \xA5${snap.usage.today.costCny.toFixed(2)}`),
+      snap.scheduleMode !== "all" && !snap.window.inWindow && h("span", { style: { ...chip, color: "#d29922" } }, `\u7A97\u53E3\u5916 \xB7 \u4E0B\u6B21\u5F00\u7A97 ${snap.window.nextOpenAt ? fmtTime(snap.window.nextOpenAt) : "\u2014"}`),
       ...snap.keywords.map((k) => h("span", { key: k, style: chip }, k)),
-      snap.keywords.length === 0 && h("span", { style: { opacity: 0.6, fontSize: 12 } }, "\u672A\u8BBE\u7F6E\u5173\u952E\u8BCD\uFF1A\u70B9\u4E0A\u65B9\u300C\u5173\u952E\u8BCD\u8BBE\u7F6E\u300D\u6DFB\u52A0\u8BDD\u9898")
+      snap.keywords.length === 0 && h("span", { style: { opacity: 0.6, fontSize: 12 } }, "\u672A\u8BBE\u7F6E\u5173\u952E\u8BCD\uFF1A\u70B9\u4E0A\u65B9\u300C\u8BBE\u7F6E\u300D\u6DFB\u52A0\u8BDD\u9898")
     ),
     showCfg && h(
       "div",
@@ -287,44 +308,97 @@ function FollowPanel() {
       h(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center", fontSize: 12, flexWrap: "wrap" } },
-        h("span", null, "\u5DE1\u67E5\u6700\u5C0F\u95F4\u9694\uFF08\u5206\u949F\uFF09"),
+        h("span", null, "\u8DDF\u8FDB\u6700\u5C0F\u95F4\u9694\uFF08\u5206\u949F\uFF09"),
         h("input", { style: { ...input, width: 70 }, type: "number", min: 5, max: 1440, value: intText, onChange: (e) => setIntText(e.target.value) }),
         h(
           "label",
           { style: { display: "flex", gap: 4, alignItems: "center" } },
           h("input", { type: "checkbox", checked: enCfg, onChange: (e) => setEnCfg(e.target.checked) }),
-          "\u542F\u7528\u7A7A\u95F2\u81EA\u52A8\u5DE1\u67E5"
+          "\u542F\u7528\u7A7A\u95F2\u81EA\u52A8\u8DDF\u8FDB"
         )
+      ),
+      h("div", { style: { fontSize: 12, opacity: 0.7 } }, "\u81EA\u52A8\u8DDF\u8FDB\u65F6\u95F4\u6BB5\uFF08\u624B\u52A8\u300C\u7ACB\u5373\u8DDF\u8FDB\u300D\u4E0D\u53D7\u9650\u5236\uFF09\uFF1A"),
+      h(
+        "div",
+        { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+        ...MODE_PRESETS.map((p) => h("button", {
+          key: p.mode,
+          type: "button",
+          style: { ...btn, ...modeCfg === p.mode ? { background: "#58a6ff22", borderColor: "#58a6ff", color: "#58a6ff" } : {} },
+          onClick: () => setModeCfg(p.mode)
+        }, p.label))
+      ),
+      modeCfg === "offpeak" && h("div", { style: { fontSize: 11, opacity: 0.6 } }, "\u8C37\u65F6 = \u5B98\u65B9\u5CF0\u65F6\uFF08\u5DE5\u4F5C\u65E5 9:00\u201312:00\u300114:00\u201318:00\uFF0C\u5317\u4EAC\u65F6\u95F4\uFF09\u4E4B\u5916\uFF0C\u542B\u5468\u672B\u5168\u5929\uFF1B\u8C37\u65F6\u6A21\u578B\u8C03\u7528\u534A\u4EF7\u3002"),
+      modeCfg === "peak" && h("div", { style: { fontSize: 11, opacity: 0.6 } }, "\u4EC5\u5B98\u65B9\u5CF0\u65F6\uFF08\u5DE5\u4F5C\u65E5 9:00\u201312:00\u300114:00\u201318:00\uFF0C\u5317\u4EAC\u65F6\u95F4\uFF09\u81EA\u52A8\u8DDF\u8FDB\uFF1B\u6B64\u65F6\u6BB5\u6A21\u578B\u8C03\u7528\u4E3A\u5168\u4EF7\u3002"),
+      modeCfg === "custom" && h(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        ...winCfg.map((w, i) => h(
+          "div",
+          { key: i, style: { display: "flex", gap: 6, alignItems: "center", fontSize: 12 } },
+          h("input", { style: { ...input, width: 110 }, type: "time", value: w.start, onChange: (e) => setWinCfg((ws) => ws.map((x, j) => j === i ? { ...x, start: e.target.value } : x)) }),
+          h("span", null, "\u81F3"),
+          h("input", { style: { ...input, width: 110 }, type: "time", value: w.end, onChange: (e) => setWinCfg((ws) => ws.map((x, j) => j === i ? { ...x, end: e.target.value } : x)) }),
+          h("button", { type: "button", style: btn, onClick: () => setWinCfg((ws) => ws.filter((_, j) => j !== i)) }, "\u5220\u9664")
+        )),
+        h("div", null, h("button", { type: "button", style: btn, disabled: winCfg.length >= 6, onClick: () => setWinCfg((ws) => [...ws, { start: "22:00", end: "06:00" }]) }, "\u6DFB\u52A0\u65F6\u6BB5")),
+        h("div", { style: { fontSize: 11, opacity: 0.6 } }, "\u6309\u672C\u673A\u672C\u5730\u65F6\u95F4\uFF1B\u652F\u6301\u8DE8\u5348\u591C\uFF08\u5982 22:00 \u81F3 06:00\uFF09\uFF1B\u4E0D\u586B\u65F6\u6BB5\u89C6\u4E3A\u5168\u5929\u3002")
       ),
       h("div", null, h("button", {
         type: "button",
         style: btn,
         disabled: busy,
-        onClick: () => void act("setConfig", { keywords: kwText, intervalMinutes: Number(intText) || 60, enabled: enCfg })
-      }, "\u4FDD\u5B58\u8BBE\u7F6E"))
+        onClick: () => void act("setConfig", {
+          keywords: kwText,
+          intervalMinutes: Number(intText) || 60,
+          enabled: enCfg,
+          scheduleMode: modeCfg,
+          activeWindows: winCfg.filter((w) => w.start && w.end).map((w) => `${w.start}-${w.end}`)
+        })
+      }, "\u4FDD\u5B58\u8BBE\u7F6E")),
+      h(
+        "div",
+        { style: { borderTop: "1px solid rgba(127,127,127,.22)", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 } },
+        h("strong", { style: { fontSize: 12 } }, "\u6838\u5B9E\u82B1\u8D39"),
+        h(
+          "div",
+          { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          h("span", { style: chip }, `\u4ECA\u65E5 \xA5${snap.usage.today.costCny.toFixed(4)}`),
+          h("span", { style: chip }, `\u8FD17\u5929 \xA5${snap.usage.last7.costCny.toFixed(4)}`),
+          h("span", { style: chip }, `\u7D2F\u8BA1 \xA5${snap.usage.total.costCny.toFixed(4)}`)
+        ),
+        h("div", { style: { fontSize: 11, opacity: 0.6 } }, `\u4ECA\u65E5 ${snap.usage.today.calls} \u6B21\u8C03\u7528 \xB7 \u8F93\u5165\u672A\u547D\u4E2D ${fmtTokens(snap.usage.today.inputTokens)} / \u7F13\u5B58\u547D\u4E2D ${fmtTokens(snap.usage.today.cacheReadTokens)} / \u8F93\u51FA ${fmtTokens(snap.usage.today.outputTokens)} token`),
+        ...snap.usage.batches.slice(0, 5).map((b) => h(
+          "div",
+          { key: b.batchId, style: { fontSize: 11, opacity: 0.75 } },
+          `${fmtTime(b.lastAt)} \u6279\u6B21 ${b.batchId.slice(0, 8)} \xB7 ${b.calls} \u6B21 \xB7 \xA5${b.costCny.toFixed(4)}${b.model ? " \xB7 " + b.model : ""}`
+        )),
+        h("div", { style: { fontSize: 11, opacity: 0.55 } }, "\u6309 DeepSeek \u5B98\u65B9 API \u4EF7\u683C\u8BA1\u7B97\uFF08\u5CF0\u8C37\u81EA\u52A8\u5224\u5B9A\uFF0C\u8C37\u65F6\u534A\u4EF7\uFF09\uFF1B\u53EA\u7EDF\u8BA1\u672C\u63D2\u4EF6\u6D3E\u53D1\u7684\u6838\u5B9E\u4F1A\u8BDD\uFF0C\u4E0D\u542B\u4E3B\u5BF9\u8BDD\u3002\u4EF7\u683C\u53EF\u5728\u5BBF\u4E3B\u914D\u7F6E pricingJson \u8986\u76D6\u3002")
+      )
     ),
     snap.login.error && h("div", { style: { color: "#f85149", fontSize: 12 } }, snap.login.error),
     snap.human.error && h("div", { style: { color: "#f85149", fontSize: 12 } }, snap.human.error),
-    snap.human.checking && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u5DF2\u6253\u5F00\u9A8C\u8BC1\u7A97\u53E3\uFF1A\u5982\u51FA\u73B0\u6ED1\u5757/\u70B9\u9009\u8BF7\u5B8C\u6210\u4E00\u6B21\uFF1B\u5B8C\u6210\u540E\u81EA\u52A8\u5224\u5B9A\uFF0C\u4E5F\u53EF\u70B9\u300C\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1\u300D\u7ACB\u5373\u590D\u6838\u3002\u5224\u5B9A\u901A\u8FC7\u540E\u7A97\u53E3\u81EA\u52A8\u7F29\u5230\u53F3\u4E0B\u89D2\u5E76\u4FDD\u7559\u4F1A\u8BDD\u4F9B\u5DE1\u67E5\u590D\u7528\u3002"),
-    !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? "") && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u4E0A\u6B21\u5DE1\u67E5\u88AB\u6296\u97F3\u98CE\u63A7\u62E6\u622A\uFF1A\u70B9\u300C\u8FC7\u9A8C\u8BC1\u300D\u4EBA\u5DE5\u5B8C\u6210\u4E00\u6B21\uFF0C\u4E4B\u540E\u81EA\u52A8\u5DE1\u67E5\u901A\u5E38\u5373\u53EF\u6062\u590D\u3002"),
+    snap.human.checking && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u5DF2\u6253\u5F00\u9A8C\u8BC1\u7A97\u53E3\uFF1A\u5982\u51FA\u73B0\u6ED1\u5757/\u70B9\u9009\u8BF7\u5B8C\u6210\u4E00\u6B21\uFF1B\u5B8C\u6210\u540E\u81EA\u52A8\u5224\u5B9A\uFF0C\u4E5F\u53EF\u70B9\u300C\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1\u300D\u7ACB\u5373\u590D\u6838\u3002\u5224\u5B9A\u901A\u8FC7\u540E\u7A97\u53E3\u81EA\u52A8\u7F29\u5230\u53F3\u4E0B\u89D2\u5E76\u4FDD\u7559\u4F1A\u8BDD\u4F9B\u8DDF\u8FDB\u590D\u7528\u3002"),
+    !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? "") && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u4E0A\u6B21\u8DDF\u8FDB\u88AB\u6296\u97F3\u98CE\u63A7\u62E6\u622A\uFF1A\u70B9\u300C\u8FC7\u9A8C\u8BC1\u300D\u4EBA\u5DE5\u5B8C\u6210\u4E00\u6B21\uFF0C\u4E4B\u540E\u81EA\u52A8\u8DDF\u8FDB\u901A\u5E38\u5373\u53EF\u6062\u590D\u3002"),
     err && h("div", { style: { color: "#f85149", fontSize: 12 } }, `\u8FDE\u63A5\u5F02\u5E38\uFF1A${err}`),
     snap.leadsPending > 0 && h("div", { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} \u6761\u7EBF\u7D22\u6B63\u5728\u6838\u5B9E\u7F16\u6392\u4E2D\u2026`),
     cards.length === 0 && h(
       "div",
       { style: { opacity: 0.6 } },
-      "\u6682\u65E0\u8FDB\u5C55\u5361\u7247\u3002\u8BBE\u7F6E\u5173\u952E\u8BCD\u5E76\u767B\u5F55\u540E\uFF0CDSH \u7A7A\u95F2\u65F6\u4F1A\u81EA\u52A8\u5DE1\u67E5\u6296\u97F3\u76F8\u5173\u89C6\u9891\uFF0C\u6838\u5B9E\u540E\u63A8\u9001\u5230\u8FD9\u91CC\u3002"
+      "\u6682\u65E0\u8FDB\u5C55\u5361\u7247\u3002\u8BBE\u7F6E\u5173\u952E\u8BCD\u5E76\u767B\u5F55\u540E\uFF0CDSH \u7A7A\u95F2\u65F6\u4F1A\u81EA\u52A8\u641C\u7D22\u6296\u97F3\u76F8\u5173\u65B0\u89C6\u9891\uFF0C\u6838\u5B9E\u540E\u63A8\u9001\u5230\u8FD9\u91CC\u3002"
     ),
     ...cards.map((card) => h(CardView, {
       key: card.id,
       card,
       open: !!open[card.id],
       onToggle: () => setOpen((o) => ({ ...o, [card.id]: !o[card.id] })),
-      onAct: (action, extra) => void act(action, extra)
+      onAct: (action, extra) => void act(action, extra),
+      batchCost: card.batchId ? snap.usage.batches.find((b) => b.batchId === card.batchId)?.costCny : void 0
     })),
     snap.patrol.last && h(
       "div",
       { style: { opacity: 0.55, fontSize: 11, marginTop: 4 } },
-      `\u4E0A\u6B21\u5DE1\u67E5 ${fmtTime(snap.patrol.last.startedAt)}\uFF1A\u53D1\u73B0 ${snap.patrol.last.found} / \u65B0\u589E ${snap.patrol.last.added}` + (snap.patrol.last.error ? ` \xB7 ${snap.patrol.last.error}` : "") + ` \xB7 \u4E0B\u6B21\u6700\u65E9 ${fmtTime(snap.patrol.nextEligibleAt ?? Date.now())}`
+      `\u4E0A\u6B21\u8DDF\u8FDB ${fmtTime(snap.patrol.last.startedAt)}\uFF1A\u53D1\u73B0 ${snap.patrol.last.found} / \u65B0\u589E ${snap.patrol.last.added}` + (snap.patrol.last.error ? ` \xB7 ${snap.patrol.last.error}` : "") + ` \xB7 \u4E0B\u6B21\u6700\u65E9 ${fmtTime(snap.patrol.nextEligibleAt ?? Date.now())}`
     )
   );
 }

@@ -51,7 +51,7 @@ function ps(script: string, timeoutMs = 12000): Promise<string> {
 }
 
 /**
- * 插件自管的持久化浏览器：登录态保存在独立 profile，巡查后台运行、不抢焦点。
+ * 插件自管的持久化浏览器：登录态保存在独立 profile，跟进后台运行、不抢焦点。
  * 全程只读：不点赞、不评论、不关注、不发布。
  */
 export class DouyinBrowser {
@@ -85,7 +85,7 @@ export class DouyinBrowser {
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
       // 去掉「正受到自动测试软件的控制」提示条；被前台窗口遮挡时仍正常渲染/跑定时器，
-      // 保证游戏/视频全屏期间后台巡查不被懒渲染或节流停摆。
+      // 保证游戏/视频全屏期间后台跟进不被懒渲染或节流停摆。
       ignoreDefaultArgs: ['--enable-automation'],
       args: [
         '--disable-blink-features=AutomationControlled',
@@ -129,7 +129,7 @@ export class DouyinBrowser {
     } catch { /* 清理失败不阻塞启动 */ }
   }
 
-  /** 把 profile 标记为「正常退出」，避免 Edge 启动时弹「还原页面/意外关闭」对话框盖住巡查页。 */
+  /** 把 profile 标记为「正常退出」，避免 Edge 启动时弹「还原页面/意外关闭」对话框盖住跟进页。 */
   private async markCleanExit(): Promise<void> {
     try {
       const { readFile, writeFile } = await import('node:fs/promises')
@@ -141,12 +141,12 @@ export class DouyinBrowser {
     } catch { /* 无 Preferences 或解析失败忽略 */ }
   }
 
-  /** 记住巡查前的前台窗口， launches 后归还焦点，避免打断游戏/全屏应用。 */
+  /** 记住跟进前的前台窗口， launches 后归还焦点，避免打断游戏/全屏应用。 */
   noteForeground(hwnd: number): void {
     if (hwnd > 0) this.foregroundHwnd = hwnd
   }
 
-  /** 窗口缩到右下角 + 置底 + 不激活 + 焦点归还前台：巡查在后台跑，不置顶弹窗打断游戏/视频/工作。 */
+  /** 窗口缩到右下角 + 置底 + 不激活 + 焦点归还前台：跟进在后台跑，不置顶弹窗打断游戏/视频/工作。 */
   async quiet(): Promise<void> {
     const hwnd = this.foregroundHwnd
     if (process.platform !== 'win32') return
@@ -330,7 +330,7 @@ export class DouyinBrowser {
         return false
       } finally {
         this.loggingIn = false
-        // 成功则保留会话：风控信任态绑定浏览器会话，关窗即失效；巡查复用同一上下文。
+        // 成功则保留会话：风控信任态绑定浏览器会话，关窗即失效；跟进复用同一上下文。
         if (ok) { await this.quietBounds(); await this.restoreFocus() }
         else await this.close().catch(() => undefined)
         this.loginWaiter = undefined
@@ -394,7 +394,7 @@ export class DouyinBrowser {
       } finally {
         this.checkingHuman = false
         this.humanConfirm = false
-        // 成功则保留会话供巡查复用（风控信任态绑定会话）；失败才关窗。
+        // 成功则保留会话供跟进复用（风控信任态绑定会话）；失败才关窗。
         if (ok) { await this.quietBounds(); await this.restoreFocus() }
         else await this.close().catch(() => undefined)
         this.humanWaiter = undefined
@@ -458,7 +458,7 @@ export class DouyinBrowser {
     }
   }
 
-  /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次巡查再开就是弹窗打扰。 */
+  /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次跟进再开就是弹窗打扰。 */
   private async closeTab(page: Page): Promise<void> {
     try {
       if (this.ctx && this.ctx.pages().length > 1) await page.close()

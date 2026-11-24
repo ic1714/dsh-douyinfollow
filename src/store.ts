@@ -1,12 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { emptyState, type Card, type Lead, type PatrolRecord, type FollowPrefs, type FollowState } from './types.js'
+import { normalizeWindow } from './schedule.js'
+import { sanitizeUsage } from './usage.js'
+import { emptyState, type Card, type Lead, type PatrolRecord, type FollowPrefs, type FollowState, type ScheduleMode } from './types.js'
 
 const SEEN_CAP = 5000
 const LEAD_CAP = 400
 const PATROL_CAP = 60
+const MODES: ScheduleMode[] = ['all', 'offpeak', 'peak', 'custom']
 
-/** 偏好清洗：关键词去空去重限长，间隔夹到合法区间。 */
+/** 偏好清洗：关键词去空去重限长，间隔夹到合法区间，时间段模式与窗口校验。 */
 export function sanitizePrefs(raw: unknown): FollowPrefs {
   const out: FollowPrefs = {}
   if (!raw || typeof raw !== 'object') return out
@@ -18,11 +21,21 @@ export function sanitizePrefs(raw: unknown): FollowPrefs {
   if (typeof p.intervalMinutes === 'number' && Number.isFinite(p.intervalMinutes)) {
     out.intervalMinutes = Math.min(1440, Math.max(5, Math.round(p.intervalMinutes)))
   }
+  if (typeof p.scheduleMode === 'string' && MODES.includes(p.scheduleMode as ScheduleMode)) {
+    out.scheduleMode = p.scheduleMode as ScheduleMode
+  }
+  if (Array.isArray(p.activeWindows)) {
+    const ws = p.activeWindows
+      .filter((w): w is string => typeof w === 'string')
+      .map(normalizeWindow)
+      .filter((w): w is string => !!w)
+    out.activeWindows = [...new Set(ws)].slice(0, 6)
+  }
   return out
 }
 
 /**
- * 本地 JSON 存储：已看视频去重、线索、卡片、巡查记录。
+ * 本地 JSON 存储：已看视频去重、线索、卡片、跟进记录、花费统计。
  * 写入走 tmp + rename 原子替换，避免崩溃留下半截文件。
  */
 export class FollowStore {
@@ -47,6 +60,7 @@ export class FollowStore {
         patrols: Array.isArray(parsed.patrols) ? parsed.patrols : [],
         lastPatrolAt: typeof parsed.lastPatrolAt === 'number' ? parsed.lastPatrolAt : undefined,
         prefs: sanitizePrefs(parsed.prefs),
+        usage: sanitizeUsage(parsed.usage),
       }
     } catch {
       this.state = emptyState()

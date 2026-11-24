@@ -7,7 +7,10 @@ import { DouyinBrowser } from './browser.js'
 import { readConfig, type Config, type FollowConfig } from './config.js'
 import { ActivityTracker } from './idle.js'
 import { FrameOcr } from './ocr.js'
+import { parsePricing } from './pricing.js'
+import { inSchedule, nextOpenAt } from './schedule.js'
 import { FollowStore } from './store.js'
+import { UsageTracker } from './usage.js'
 import { overallOf, type Card, type Fact, type Lead, type PatrolRecord, type FollowSnapshot, type VideoRef } from './types.js'
 
 export interface PublishInput {
@@ -26,7 +29,7 @@ export function resolveDataDir(cfg: FollowConfig): string {
 }
 
 /**
- * 核心引擎：空闲巡查 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
+ * 核心引擎：空闲跟进 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
  * 浏览器与核实会话都在后台运行，不打断前台对话。
  */
 export class FollowEngine {
@@ -34,6 +37,7 @@ export class FollowEngine {
   readonly browser: DouyinBrowser
   readonly ocr: FrameOcr
   readonly tracker = new ActivityTracker()
+  readonly usage: UsageTracker
   private timer?: ReturnType<typeof setInterval>
   private running = false
   private current?: PatrolRecord
@@ -51,6 +55,7 @@ export class FollowEngine {
       loginTimeoutSeconds: cfg.loginTimeoutSeconds,
     })
     this.ocr = new FrameOcr(dir)
+    this.usage = new UsageTracker(this.store, () => parsePricing(this.cfg().pricingJson))
   }
 
   cfg(): FollowConfig {
@@ -61,12 +66,15 @@ export class FollowEngine {
       enabled: prefs.enabled ?? base.enabled,
       keywords: prefs.keywords ?? base.keywords,
       intervalMinutes: prefs.intervalMinutes ?? base.intervalMinutes,
+      scheduleMode: prefs.scheduleMode ?? base.scheduleMode,
+      activeWindows: prefs.activeWindows ?? base.activeWindows,
     }
   }
 
   async start(): Promise<void> {
     await this.store.load()
     this.tracker.attach(this.ctx)
+    this.usage.attach(this.ctx)
     void this.refreshLogin()
     this.timer = setInterval(() => void this.tick(), 20000)
   }
@@ -114,10 +122,12 @@ export class FollowEngine {
     if (this.browser.loggingIn || this.browser.checkingHuman) return
     const cfg = this.cfg()
     if (!cfg.enabled || cfg.keywords.length === 0) return
+    // 时间段守卫：只约束自动跟进；手动「立即跟进」/工具触发绕过窗口。
+    if (!inSchedule(new Date(), cfg.scheduleMode, cfg.activeWindows)) return
     const last = this.store.state.lastPatrolAt ?? 0
     if (Date.now() - last < cfg.intervalMinutes * 60000) return
     if (!this.tracker.isIdle(cfg.idleQuietSeconds * 1000)) return
-    // 记录前台窗口供归还焦点；全屏游戏/视频时巡查照跑，但窗口置底不激活、不打断前台。
+    // 记录前台窗口供归还焦点；全屏游戏/视频时跟进照跑，但窗口置底不激活、不打断前台。
     const fg = await this.foregroundFullscreen()
     this.browser.noteForeground(fg.hwnd)
     if (!this.loggedIn) {
@@ -159,9 +169,9 @@ export class FollowEngine {
     return out
   }
 
-  /** 触发一次巡查；守卫同步返回，采集在后台继续。 */
+  /** 触发一次跟进；守卫同步返回，采集在后台继续。 */
   runPatrol(trigger: PatrolRecord['trigger']): { started: boolean; patrolId?: string; reason?: string } {
-    if (this.running) return { started: false, reason: '已有巡查在进行中' }
+    if (this.running) return { started: false, reason: '已有跟进在进行中' }
     const cfg = this.cfg()
     if (!cfg.enabled) return { started: false, reason: '插件已停用（enabled=false）' }
     if (cfg.keywords.length === 0) return { started: false, reason: '尚未设置关键词' }
@@ -247,7 +257,7 @@ export class FollowEngine {
       this.running = false
       this.current = undefined
       await this.store.save()
-      // 巡查收尾再置底一次：确保整个采集期间窗口都没有压到前台应用上面。
+      // 跟进收尾再置底一次：确保整个采集期间窗口都没有压到前台应用上面。
       await this.browser.quiet().catch(() => undefined)
     }
   }
@@ -260,11 +270,14 @@ export class FollowEngine {
     try {
       await this.ctx.schedule.deleteInactive().catch(() => undefined)
       const task = await this.ctx.schedule.create({
-        title: `抖音雷达核实 ${batchId.slice(0, 8)}`,
+        title: `抖音跟进核实 ${batchId.slice(0, 8)}`,
         prompt,
         timing: { kind: 'after', after_seconds: 2 },
         target: { kind: 'new_once' },
       })
+      // new_once 创建即预留 sessionId：登记归属，供花费统计精确计入本插件的核实会话。
+      const sid = (task as { target?: { sessionId?: unknown } }).target?.sessionId
+      if (typeof sid === 'string' && sid) this.usage.register(sid, batchId)
       for (const lead of leads) lead.status = 'verifying'
       await this.store.save()
       return { dispatched: true, taskId: String(task.id) }
@@ -292,6 +305,7 @@ export class FollowEngine {
     const card: Card = {
       id: randomUUID(),
       leadId: lead.id,
+      batchId: lead.batchId,
       keyword: input.keyword?.trim() || lead.keyword,
       headline: String(input.headline ?? '').slice(0, 200) || lead.video.title,
       createdAt: Date.now(),
@@ -324,12 +338,20 @@ export class FollowEngine {
     const cards = [...state.cards].sort((a, b) => b.createdAt - a.createdAt)
     const patrols = [...state.patrols].sort((a, b) => b.startedAt - a.startedAt)
     const last = patrols[0]
-    const nextEligibleAt = (state.lastPatrolAt ?? 0) + cfg.intervalMinutes * 60000
+    const now = Date.now()
+    const d = new Date(now)
+    const inWindow = inSchedule(d, cfg.scheduleMode, cfg.activeWindows)
+    const nextOpen = inWindow ? undefined : nextOpenAt(d, cfg.scheduleMode, cfg.activeWindows)
+    // 下次最早自动跟进 = 间隔到期 与 下次开窗 的较晚者。
+    const nextEligibleAt = Math.max((state.lastPatrolAt ?? 0) + cfg.intervalMinutes * 60000, nextOpen ?? 0)
     return {
-      now: Date.now(),
+      now,
       enabled: cfg.enabled,
       keywords: cfg.keywords,
       intervalMinutes: cfg.intervalMinutes,
+      scheduleMode: cfg.scheduleMode,
+      activeWindows: cfg.activeWindows,
+      window: { inWindow, nextOpenAt: nextOpen },
       login: { loggedIn: this.loggedIn, loggingIn: this.browser.loggingIn, error: this.browser.loginError },
       human: { checking: this.browser.checkingHuman, error: this.browser.humanError },
       idle: {
@@ -343,6 +365,7 @@ export class FollowEngine {
       cards,
       patrols: patrols.slice(0, 10),
       ocrReady: this.ocr.ready,
+      usage: this.usage.view(),
     }
   }
 }

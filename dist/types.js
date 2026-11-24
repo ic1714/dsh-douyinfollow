@@ -2,8 +2,11 @@
  * douyinfollow 共享类型：宿主与客户端面板共用的数据形状。
  * 视频只是线索来源；卡片上的事实点必须带权威来源核实状态。
  */
+export function emptyUsage() {
+    return { sessions: {}, records: [], daily: [], batches: [], total: { calls: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, costCny: 0 } };
+}
 export function emptyState() {
-    return { seen: [], leads: [], cards: [], patrols: [], prefs: {} };
+    return { seen: [], leads: [], cards: [], patrols: [], prefs: {}, usage: emptyUsage() };
 }
 export function overallOf(facts) {
     if (facts.length === 0)

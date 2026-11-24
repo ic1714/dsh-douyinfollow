@@ -126,6 +126,8 @@ export function registerRoutes(ctx: Context, engine: FollowEngine): () => void {
               raw.keywords = body.keywords
             }
             if (typeof body.intervalMinutes === 'number') raw.intervalMinutes = body.intervalMinutes
+            if (typeof body.scheduleMode === 'string') raw.scheduleMode = body.scheduleMode
+            if (Array.isArray(body.activeWindows)) raw.activeWindows = body.activeWindows
             const prefs = sanitizePrefs(raw)
             engine.store.state.prefs = { ...engine.store.state.prefs, ...prefs }
             await engine.store.save()

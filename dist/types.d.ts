@@ -26,7 +26,7 @@ export interface VideoRef {
     publishText?: string;
     keyword: string;
 }
-/** 巡查采集到、等待核实编排处理的原始线索。 */
+/** 跟进采集到、等待核实编排处理的原始线索。 */
 export interface Lead {
     id: string;
     batchId: string;
@@ -43,6 +43,8 @@ export interface Lead {
 export interface Card {
     id: string;
     leadId: string;
+    /** 来源核实批次（用于卡片详情展示批次花费；旧卡片可能缺失）。 */
+    batchId?: string;
     keyword: string;
     /** 卡面一句话进展。 */
     headline: string;
@@ -67,6 +69,69 @@ export interface PatrolRecord {
     error?: string;
     trigger: 'idle' | 'manual' | 'tool';
 }
+/** 自动跟进时间段模式：全天 / 谷时（官方峰时取反）/ 峰时 / 自定义每日窗口。 */
+export type ScheduleMode = 'all' | 'offpeak' | 'peak' | 'custom';
+/** 单次核实模型调用的用量与花费记录。 */
+export interface UsageRecord {
+    at: number;
+    sessionId: string;
+    batchId: string;
+    provider?: string;
+    model?: string;
+    /** 未命中缓存的输入 token（适配器分桶口径）。 */
+    inputTokens: number;
+    cacheReadTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    /** 请求时刻是否官方峰时（北京时间）。 */
+    peak: boolean;
+    costCny: number;
+}
+/** 按本地日期聚合的用量。 */
+export interface UsageDaily {
+    date: string;
+    calls: number;
+    inputTokens: number;
+    cacheReadTokens: number;
+    outputTokens: number;
+    costCny: number;
+}
+/** 按核实批次聚合的用量（卡片详情展示批次花费用）。 */
+export interface UsageBatch {
+    batchId: string;
+    firstAt: number;
+    lastAt: number;
+    calls: number;
+    inputTokens: number;
+    cacheReadTokens: number;
+    outputTokens: number;
+    costCny: number;
+    model?: string;
+}
+export interface UsageTotals {
+    calls: number;
+    inputTokens: number;
+    cacheReadTokens: number;
+    outputTokens: number;
+    costCny: number;
+}
+/** 花费统计持久化状态。 */
+export interface UsageState {
+    /** 插件派发的核实会话 sessionId → batchId 归属映射（重启后仍可归属）。 */
+    sessions: Record<string, string>;
+    records: UsageRecord[];
+    daily: UsageDaily[];
+    batches: UsageBatch[];
+    total: UsageTotals;
+}
+/** 面板 / 工具共用的用量视图。 */
+export interface UsageView {
+    today: UsageTotals;
+    last7: UsageTotals;
+    total: UsageTotals;
+    batches: UsageBatch[];
+}
+export declare function emptyUsage(): UsageState;
 /** 本地持久化状态（state.json）。 */
 export interface FollowState {
     seen: string[];
@@ -75,12 +140,15 @@ export interface FollowState {
     patrols: PatrolRecord[];
     lastPatrolAt?: number;
     prefs?: FollowPrefs;
+    usage: UsageState;
 }
 /** 面板内可改的运行偏好（覆盖宿主配置默认值，存于 state.json）。 */
 export interface FollowPrefs {
     enabled?: boolean;
     keywords?: string[];
     intervalMinutes?: number;
+    scheduleMode?: ScheduleMode;
+    activeWindows?: string[];
 }
 /** 面板 / 路由 / 工具共用的运行时快照。 */
 export interface FollowSnapshot {
@@ -88,6 +156,13 @@ export interface FollowSnapshot {
     enabled: boolean;
     keywords: string[];
     intervalMinutes: number;
+    scheduleMode: ScheduleMode;
+    activeWindows: string[];
+    /** 自动跟进时间段状态（手动跟进不受窗口约束）。 */
+    window: {
+        inWindow: boolean;
+        nextOpenAt?: number;
+    };
     login: {
         loggedIn: boolean;
         loggingIn: boolean;
@@ -113,6 +188,7 @@ export interface FollowSnapshot {
     cards: Card[];
     patrols: PatrolRecord[];
     ocrReady: boolean;
+    usage: UsageView;
 }
 export declare function emptyState(): FollowState;
 export declare function overallOf(facts: Fact[]): OverallStatus;

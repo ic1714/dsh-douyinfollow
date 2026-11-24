@@ -4,6 +4,7 @@ import { type Config, type FollowConfig } from './config.js';
 import { ActivityTracker } from './idle.js';
 import { FrameOcr } from './ocr.js';
 import { FollowStore } from './store.js';
+import { UsageTracker } from './usage.js';
 import { type Fact, type PatrolRecord, type FollowSnapshot } from './types.js';
 export interface PublishInput {
     leadId: string;
@@ -15,7 +16,7 @@ export interface PublishInput {
 }
 export declare function resolveDataDir(cfg: FollowConfig): string;
 /**
- * 核心引擎：空闲巡查 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
+ * 核心引擎：空闲跟进 → 采集 → 线索入库 → 派发独立会话做权威核实 → 卡片入面板。
  * 浏览器与核实会话都在后台运行，不打断前台对话。
  */
 export declare class FollowEngine {
@@ -25,6 +26,7 @@ export declare class FollowEngine {
     readonly browser: DouyinBrowser;
     readonly ocr: FrameOcr;
     readonly tracker: ActivityTracker;
+    readonly usage: UsageTracker;
     private timer?;
     private running;
     private current?;
@@ -52,7 +54,7 @@ export declare class FollowEngine {
     /** 前台窗口是否全屏（60 秒缓存，避免每 tick 起进程）；顺带记录前台 hwnd 供归还焦点。 */
     private fgCache?;
     private foregroundFullscreen;
-    /** 触发一次巡查；守卫同步返回，采集在后台继续。 */
+    /** 触发一次跟进；守卫同步返回，采集在后台继续。 */
     runPatrol(trigger: PatrolRecord['trigger']): {
         started: boolean;
         patrolId?: string;
