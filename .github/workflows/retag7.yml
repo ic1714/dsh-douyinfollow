@@ -35,8 +35,10 @@ jobs:
           fi
           got=$(curl -s -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r '.object.sha // empty')
           echo "ref=$got"
+          [ -f /tmp/pub.json ] || echo '{}' > /tmp/pub.json
           jq -cn --arg rid "$rid" --arg draft "$draft" --arg pubcode "$pubcode" --arg got "$got" --arg want "$SHA" \
-            '{rid:$rid,draft:$draft,publish_code:$pubcode,ref:$got,want:$want}' > debug-retag7.json
+            --slurpfile pub /tmp/pub.json \
+            '{rid:$rid,draft:$draft,publish_code:$pubcode,pub_body:$pub[0],ref:$got,want:$want}' > debug-retag7.json
           cat debug-retag7.json
           # 留档走公开渠道：挂到 v1.2 Release 附件（90 秒后自删），不依赖 git push
           rid12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
