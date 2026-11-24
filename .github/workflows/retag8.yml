@@ -22,21 +22,21 @@ jobs:
           API="https://api.github.com/repos/$GITHUB_REPOSITORY"
           AUTH="Authorization: Bearer $GH_TOKEN"
           SHA="9c21fa0ba61af0320f0a195a5f4f039bce13dd9c"
-          rels=$(curl -s -H "$AUTH" "$API/releases?per_page=100")
+          rels=$(curl -s --max-time 30 -H "$AUTH" "$API/releases?per_page=100")
           rid=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.1") | .id' | head -1)
           rid12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
-          body12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .body' | head -1)
+          body12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .body')
           echo "rid=$rid rid12=$rid12"
           pubcode=skip
           if [ -n "$rid" ]; then
-            pubcode=$(curl -s -o /tmp/pub.json -w '%{http_code}' -X PATCH -H "$AUTH" "$API/releases/$rid" -d "{\"draft\":false,\"target_commitish\":\"$SHA\"}")
+            pubcode=$(curl -s --max-time 30 -o /tmp/pub.json -w '%{http_code}' -X PATCH -H "$AUTH" "$API/releases/$rid" -d "{\"draft\":false,\"target_commitish\":\"$SHA\"}")
             echo "publish=$pubcode"; cat /tmp/pub.json; echo
           fi
           [ -f /tmp/pub.json ] || echo '{}' > /tmp/pub.json
-          got=$(curl -s -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r '.object.sha // empty')
+          got=$(curl -s --max-time 30 -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r '.object.sha // empty')
           echo "ref=$got"
           dbg=$(jq -cn --arg rid "$rid" --arg pubcode "$pubcode" --arg got "$got" --arg want "$SHA" --slurpfile pub /tmp/pub.json \
             '{rid:$rid,publish_code:$pubcode,pub_body:$pub[0],ref:$got,want:$want}')
           newbody=$(jq -cn --arg b "$body12" --arg d "$dbg" '$b + "\n<!-- retag8debug " + $d + " -->"')
-          curl -s -o /dev/null -w 'bodypatch=%{http_code}\n' -X PATCH -H "$AUTH" "$API/releases/$rid12" -d "{\"body\":$newbody}"
+          curl -s --max-time 30 -o /dev/null -w 'bodypatch=%{http_code}\n' -X PATCH -H "$AUTH" "$API/releases/$rid12" -d "{\"body\":$newbody}"
           [ "$got" = "$SHA" ]
