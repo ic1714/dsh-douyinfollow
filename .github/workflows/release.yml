@@ -99,3 +99,14 @@ jobs:
                   "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$aid"
                 echo "pruned asset $aid"
               done
+      - name: Keep Latest on the highest version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          top=$(git tag -l | sort -V | tail -1)
+          rid=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$top" | jq -r .id)
+          curl -sf -o /dev/null -X PATCH -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$rid" -d '{"make_latest":"true"}'
+          echo "latest -> $top"

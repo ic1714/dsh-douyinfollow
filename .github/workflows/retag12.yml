@@ -1,0 +1,25 @@
+name: Retag12
+
+# 一次性修复：提交信息带 [retag12] 标记的 main 推送触发。把 Latest 标回 v1.2（补发老版本时被 softprops 默认抢走）。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  retag12:
+    if: ${{ contains(github.event.head_commit.message, '[retag12]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Point Latest back to v1.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GH_TOKEN"
+          rid=$(curl -s --max-time 30 -H "$AUTH" "$API/releases/tags/0.2.2_v1.2" | jq -r .id)
+          code=$(curl -s --max-time 30 -o /dev/null -w '%{http_code}' -X PATCH -H "$AUTH" "$API/releases/$rid" -d '{"make_latest":"true"}')
+          echo "make_latest=$code"
+          [ "$code" = "200" ]
