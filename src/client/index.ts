@@ -123,6 +123,7 @@ function FollowPanel() {
   const [open, setOpen] = React.useState<Record<string, boolean>>({})
   const [showArchived, setShowArchived] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
+  const [actErr, setActErr] = React.useState<string | null>(null)
   const [showCfg, setShowCfg] = React.useState(false)
   const [kwText, setKwText] = React.useState('')
   const [intText, setIntText] = React.useState('60')
@@ -162,13 +163,17 @@ function FollowPanel() {
 
   const act = React.useCallback(async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true)
+    setActErr(null)
     try {
-      await fetch(ACTION, {
+      const r = await fetch(ACTION, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action, ...extra }),
       })
+      const body = (await r.json().catch(() => null)) as { started?: boolean; reason?: string } | null
       await load()
+      // 守卫拒绝（如未设关键词）原先被静默吞掉，表现为「点了没反应」；现在红字显性化。
+      if (body && body.started === false && typeof body.reason === 'string') setActErr(body.reason)
     } catch (e) {
       setErr(String((e as Error)?.message ?? e))
     } finally {
@@ -200,6 +205,7 @@ function FollowPanel() {
       h('span', { style: { ...chip, color: snap.login.loggedIn ? '#2ea043' : '#d29922' } }, snap.login.loggedIn ? '抖音已登录' : '抖音未登录'),
       h('span', { style: { ...chip, color: '#58a6ff' } }, `今日 ¥${snap.usage.today.costCny.toFixed(2)}`),
       snap.scheduleMode !== 'all' && !snap.window.inWindow && h('span', { style: { ...chip, color: '#d29922' } }, `窗口外 · 下次开窗 ${snap.window.nextOpenAt ? fmtTime(snap.window.nextOpenAt) : '—'}`),
+      !snap.enabled && h('span', { style: { ...chip, color: '#d29922' } }, '自动跟进已停用（手动不受限）'),
       ...snap.keywords.map(k => h('span', { key: k, style: chip }, k)),
       snap.keywords.length === 0 && h('span', { style: { opacity: 0.6, fontSize: 12 } }, '未设置关键词：点上方「设置」添加话题'),
     ),
@@ -261,6 +267,7 @@ function FollowPanel() {
     snap.human.checking && h('div', { style: { color: '#d29922', fontSize: 12 } }, '已打开验证窗口：如出现滑块/点选请完成一次；完成后自动判定，也可点「我已完成验证」立即复核。点「取消验证」或直接关窗会立即结束本次验证、可马上重试。判定通过后窗口自动缩到右下角并保留会话供跟进复用。'),
     !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? '') && h('div', { style: { color: '#d29922', fontSize: 12 } }, '上次跟进被抖音风控拦截：点「过验证」人工完成一次，之后自动跟进通常即可恢复。'),
     snap.patrol.last && !snap.patrol.last.error && snap.patrol.last.added === 0 && snap.patrol.last.found > 0 && h('div', { style: { opacity: 0.6, fontSize: 12 } }, '本次跟进无新线索：搜索结果都已看过（看过的视频不重复核实，省花费）。关键词下出现新视频时会自动核实推送；也可在「设置」里加关键词扩大覆盖。'),
+    actErr && h('div', { style: { color: '#f85149', fontSize: 12 } }, `未执行：${actErr}`),
     err && h('div', { style: { color: '#f85149', fontSize: 12 } }, `连接异常：${err}`),
     snap.leadsPending > 0 && h('div', { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} 条线索正在核实编排中…`),
     cards.length === 0 && h('div', { style: { opacity: 0.6 } },

@@ -179,7 +179,8 @@ export class FollowEngine {
   runPatrol(trigger: PatrolRecord['trigger']): { started: boolean; patrolId?: string; reason?: string } {
     if (this.running) return { started: false, reason: '已有跟进在进行中' }
     const cfg = this.cfg()
-    if (!cfg.enabled) return { started: false, reason: '插件已停用（enabled=false）' }
+    // enabled 语义为「启用空闲自动跟进」：只约束自动触发，手动/工具触发绕过（与时间段守卫一致）。
+    if (!cfg.enabled && trigger === 'idle') return { started: false, reason: '自动跟进已停用（enabled=false）' }
     if (cfg.keywords.length === 0) return { started: false, reason: '尚未设置关键词' }
     if (!this.loggedIn && trigger !== 'manual') return { started: false, reason: '抖音未登录' }
     const record: PatrolRecord = {

@@ -195,6 +195,18 @@ assert.equal(snap.usage.debug.matched, 2)
 assert.ok(snap.usage.debug.seen >= 3)
 assert.ok(snap.patrol.nextEligibleAt >= Date.now())
 
+// 回归：enabled=false 只挡自动跟进，手动不受限；守卫拒绝必须带 reason（面板显性化依赖）
+const offEngine = new FollowEngine(fakeCtx, cfgStub({ keywords: v(['DeepSeek']), enabled: v(false) }))
+await offEngine.store.load()
+offEngine.doPatrol = async () => {} // 截断后台采集，只断言守卫
+assert.equal(offEngine.runPatrol('idle').started, false)
+assert.equal(offEngine.runPatrol('manual').started, true)
+offEngine.running = false
+const noKwEngine = new FollowEngine(fakeCtx, cfgStub({ keywords: v([]) }))
+await noKwEngine.store.load()
+noKwEngine.doPatrol = async () => {}
+assert.ok(noKwEngine.runPatrol('manual').reason)
+
 await rm(dir, { recursive: true, force: true })
 await rm(dir2, { recursive: true, force: true })
 console.log('SMOKE OK: store / config / overall / publish / dispatch / schedule / pricing / usage / snapshot')
