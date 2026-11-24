@@ -14,6 +14,9 @@ export declare class UsageTracker {
     private pricing;
     /** 每个核实会话最近一次 request/header 的 provider/model（内存态即可，记录时落盘）。 */
     private models;
+    /** 事件诊断计数（内存态）：收到 / 归属命中 / 入账，供面板与工具排查「有跑动没计费」。 */
+    private seen;
+    private matched;
     constructor(store: FollowStore, pricing: () => PricingTable);
     attach(ctx: Context): void;
     /** 派发核实会话后登记归属；超出上限淘汰最旧登记。 */

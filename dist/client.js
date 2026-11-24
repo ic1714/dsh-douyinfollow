@@ -373,6 +373,7 @@ function FollowPanel() {
           { key: b.batchId, style: { fontSize: 11, opacity: 0.75 } },
           `${fmtTime(b.lastAt)} \u6279\u6B21 ${b.batchId.slice(0, 8)} \xB7 ${b.calls} \u6B21 \xB7 \xA5${b.costCny.toFixed(4)}${b.model ? " \xB7 " + b.model : ""}`
         )),
+        h("div", { style: { fontSize: 11, opacity: 0.55 } }, `\u4E8B\u4EF6\u8BCA\u65AD\uFF1A\u6536\u5230 ${snap.usage.debug.seen} \xB7 \u5F52\u5C5E ${snap.usage.debug.matched} \xB7 \u5165\u8D26 ${snap.usage.debug.recorded}\uFF08\u91CD\u542F\u5F52\u96F6\uFF1B\u300C\u6536\u5230\u300D\u957F\u671F\u4E3A 0 \u8BF4\u660E\u4E8B\u4EF6\u6CA1\u5230\u63D2\u4EF6\uFF09`),
         h("div", { style: { fontSize: 11, opacity: 0.55 } }, "\u6309 DeepSeek \u5B98\u65B9 API \u4EF7\u683C\u8BA1\u7B97\uFF08\u5CF0\u8C37\u81EA\u52A8\u5224\u5B9A\uFF0C\u8C37\u65F6\u534A\u4EF7\uFF09\uFF1B\u53EA\u7EDF\u8BA1\u672C\u63D2\u4EF6\u6D3E\u53D1\u7684\u6838\u5B9E\u4F1A\u8BDD\uFF0C\u4E0D\u542B\u4E3B\u5BF9\u8BDD\u3002\u4EF7\u683C\u53EF\u5728\u5BBF\u4E3B\u914D\u7F6E pricingJson \u8986\u76D6\u3002")
       )
     ),

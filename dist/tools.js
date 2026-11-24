@@ -220,6 +220,7 @@ export function registerTools(ctx, engine) {
                     `近7天：${fmt(u.last7)}`,
                     `累计：${fmt(u.total)}`,
                     ...u.batches.slice(0, 5).map(b => `批次 ${b.batchId.slice(0, 8)}：${b.calls}次 ¥${b.costCny.toFixed(4)}${b.model ? ' ' + b.model : ''}`),
+                    `事件诊断：收到 ${u.debug.seen} · 归属 ${u.debug.matched} · 入账 ${u.debug.recorded}（重启归零）`,
                 ].join('\n'));
             },
         },

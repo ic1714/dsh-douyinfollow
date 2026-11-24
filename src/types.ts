@@ -145,6 +145,8 @@ export interface UsageView {
   last7: UsageTotals
   total: UsageTotals
   batches: UsageBatch[]
+  /** 事件诊断：收到 / 归属命中 / 入账条数（内存态，重启归零）。 */
+  debug: { seen: number; matched: number; recorded: number }
 }
 
 export function emptyUsage(): UsageState {

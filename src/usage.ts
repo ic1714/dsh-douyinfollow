@@ -68,14 +68,21 @@ function addTotals(t: UsageTotals, r: { calls?: number; inputTokens: number; cac
 export class UsageTracker {
   /** 每个核实会话最近一次 request/header 的 provider/model（内存态即可，记录时落盘）。 */
   private models = new Map<string, { provider?: string; model?: string }>()
+  /** 事件诊断计数（内存态）：收到 / 归属命中 / 入账，供面板与工具排查「有跑动没计费」。 */
+  private seen = 0
+  private matched = 0
 
   constructor(private store: FollowStore, private pricing: () => PricingTable) {}
 
   attach(ctx: Context): void {
+    // 会话事件按 dsh-scope 作用域链路由，插件 ctx 不在会话 scope 的祖先链上，
+    // 必须 global:true 绕过上下文过滤，否则归属登记成功但事件永远不到（v2/v3 今日¥0.00 的根因）。
     ctx.on('session/event', (session, event) => {
+      this.seen += 1
       const sid = String((session as { id?: unknown }).id ?? '')
       const batchId = this.store.state.usage.sessions[sid]
       if (!batchId) return
+      this.matched += 1
       const type = (event as { type?: string }).type
       if (type === 'request/header') {
         const config = (event as { header?: { config?: { provider?: unknown; model?: unknown } } }).header?.config
@@ -95,7 +102,7 @@ export class UsageTracker {
           reasoningTokens: typeof usage.reasoningTokens === 'number' ? usage.reasoningTokens : undefined,
         })
       }
-    })
+    }, { global: true })
   }
 
   /** 派发核实会话后登记归属；超出上限淘汰最旧登记。 */
@@ -159,6 +166,6 @@ export class UsageTracker {
       if (d.date >= cutoff && d.date <= todayKey) addTotals(last7, d)
     }
     const batches = [...u.batches].sort((a, b) => b.lastAt - a.lastAt).slice(0, 10)
-    return { today, last7, total: { ...u.total }, batches }
+    return { today, last7, total: { ...u.total }, batches, debug: { seen: this.seen, matched: this.matched, recorded: u.total.calls } }
   }
 }

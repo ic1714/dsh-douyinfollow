@@ -252,6 +252,7 @@ function FollowPanel() {
         h('div', { style: { fontSize: 11, opacity: 0.6 } }, `今日 ${snap.usage.today.calls} 次调用 · 输入未命中 ${fmtTokens(snap.usage.today.inputTokens)} / 缓存命中 ${fmtTokens(snap.usage.today.cacheReadTokens)} / 输出 ${fmtTokens(snap.usage.today.outputTokens)} token`),
         ...snap.usage.batches.slice(0, 5).map(b => h('div', { key: b.batchId, style: { fontSize: 11, opacity: 0.75 } },
           `${fmtTime(b.lastAt)} 批次 ${b.batchId.slice(0, 8)} · ${b.calls} 次 · ¥${b.costCny.toFixed(4)}${b.model ? ' · ' + b.model : ''}`)),
+        h('div', { style: { fontSize: 11, opacity: 0.55 } }, `事件诊断：收到 ${snap.usage.debug.seen} · 归属 ${snap.usage.debug.matched} · 入账 ${snap.usage.debug.recorded}（重启归零；「收到」长期为 0 说明事件没到插件）`),
         h('div', { style: { fontSize: 11, opacity: 0.55 } }, '按 DeepSeek 官方 API 价格计算（峰谷自动判定，谷时半价）；只统计本插件派发的核实会话，不含主对话。价格可在宿主配置 pricingJson 覆盖。'),
       ),
     ),

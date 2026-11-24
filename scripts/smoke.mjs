@@ -123,8 +123,9 @@ assert.equal(sanitizeUsage(undefined).records.length, 0)
 
 // 8. 引擎：发布/重算/跳过/派发/用量归属（fake ctx，不触网）
 let sessionEventHandler
+const sessionOns = []
 const fakeCtx = {
-  on: (name, fn) => { if (name === 'session/event') sessionEventHandler = fn; return () => {} },
+  on: (name, fn, opts) => { if (name === 'session/event') { sessionEventHandler = fn; sessionOns.push(opts) } return () => {} },
   effect: () => () => {},
   schedule: {
     create: async () => ({ id: 'task-1', target: { kind: 'new_once', sessionId: 'sess-1' } }),
@@ -133,7 +134,11 @@ const fakeCtx = {
 }
 const engine = new FollowEngine(fakeCtx, cfgStub({ keywords: v(['DeepSeek']) }))
 await engine.store.load()
-engine.usage.attach(fakeCtx)
+engine.tracker.attach(fakeCtx) // idle 监听 normally 随引擎启动挂载，smoke 显式补挂以断言注册选项
+engine.usage.attach(fakeCtx) // 最后注册：后续事件模拟打在 usage 监听上
+// 回归：session/event 必须 global 注册（dsh-scope 作用域路由会滤掉插件 ctx 的普通监听 → 今日¥0.00）
+assert.equal(sessionOns.length, 2) // idle + usage
+assert.ok(sessionOns.every(o => o && o.global === true))
 engine.store.addLeads([
   { ...lead, id: 'l2', batchId: 'b2' },
   { ...lead, id: 'l3', batchId: 'b2', video: { ...lead.video, videoId: 'v9' } },
@@ -185,6 +190,9 @@ assert.deepEqual(snap.keywords, ['DeepSeek'])
 assert.equal(snap.scheduleMode, 'all')
 assert.equal(snap.window.inWindow, true)
 assert.equal(snap.usage.today.calls, 1)
+assert.equal(snap.usage.debug.recorded, 1)
+assert.equal(snap.usage.debug.matched, 2)
+assert.ok(snap.usage.debug.seen >= 3)
 assert.ok(snap.patrol.nextEligibleAt >= Date.now())
 
 await rm(dir, { recursive: true, force: true })
