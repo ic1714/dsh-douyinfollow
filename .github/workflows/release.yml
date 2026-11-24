@@ -117,7 +117,6 @@ jobs:
             "https://api.github.com/repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" \
             | jq -r --arg cur "$cur" '.[].ref | select(. != "refs/tags/v1.0" and . != ("refs/tags/" + $cur))' \
             | while IFS= read -r ref; do
-                curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
-                  "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/${ref#refs/tags/}"
+                git push origin --delete "$ref" || true
                 echo "removed tag $ref"
               done
