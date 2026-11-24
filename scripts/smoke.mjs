@@ -180,6 +180,12 @@ assert.equal(engine.store.state.usage.batches.find(b => b.batchId === 'b3').call
 // 未登记会话的事件不入账
 sessionEventHandler({ id: 'someone-else' }, { type: 'assistant/message', usage: { inputTokens: 9999, outputTokens: 9999 } })
 assert.equal(engine.store.state.usage.records.length, 1)
+// 回归：框架真实事件 payload 包在 data 里（顶层读 usage 会漏计）；stream 回退也要能入账
+sessionEventHandler({ id: 'sess-1' }, { type: 'assistant/message', data: { usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 } } })
+assert.equal(engine.store.state.usage.records.length, 2)
+sessionEventHandler({ id: 'sess-1' }, { type: 'assistant/message', data: { stream: [{ type: 'chunk', chunk: { type: 'usage', usage: { inputTokens: 7, outputTokens: 3 } } }] } })
+assert.equal(engine.store.state.usage.records.length, 3)
+assert.equal(engine.store.state.usage.total.calls, 3)
 // 快照形状（设上次跟进为 29 分钟前，间隔 30 分钟 → 下次最早在 1 分钟后）
 engine.store.state.lastPatrolAt = Date.now() - 29 * 60000
 const snap = engine.snapshot()
@@ -189,10 +195,10 @@ assert.equal(snap.leadsPending, 1)
 assert.deepEqual(snap.keywords, ['DeepSeek'])
 assert.equal(snap.scheduleMode, 'all')
 assert.equal(snap.window.inWindow, true)
-assert.equal(snap.usage.today.calls, 1)
-assert.equal(snap.usage.debug.recorded, 1)
-assert.equal(snap.usage.debug.matched, 2)
-assert.ok(snap.usage.debug.seen >= 3)
+assert.equal(snap.usage.today.calls, 3)
+assert.equal(snap.usage.debug.recorded, 3)
+assert.equal(snap.usage.debug.matched, 4)
+assert.ok(snap.usage.debug.seen >= 5)
 assert.ok(snap.patrol.nextEligibleAt >= Date.now())
 
 // 回归：enabled=false 只挡自动跟进，手动不受限；守卫拒绝必须带 reason（面板显性化依赖）

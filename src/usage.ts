@@ -20,6 +20,22 @@ function dateKey(ts: number): string {
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
 
+type RawUsage = { inputTokens?: unknown; outputTokens?: unknown; cacheReadTokens?: unknown; reasoningTokens?: unknown }
+
+/** 与官方 dsh-token-meter usageOf 同源：payload 在 event.data 里；usage 缺失时回退 stream 末个 usage chunk。 */
+function usageOf(data: Record<string, unknown>): RawUsage | undefined {
+  const direct = data.usage
+  if (direct && typeof direct === 'object') return direct as RawUsage
+  const stream = data.stream
+  if (Array.isArray(stream)) {
+    for (let i = stream.length - 1; i >= 0; i--) {
+      const rec = stream[i] as { type?: string; chunk?: { type?: string; usage?: RawUsage } } | undefined
+      if (rec?.type === 'chunk' && rec.chunk?.type === 'usage') return rec.chunk.usage
+    }
+  }
+  return undefined
+}
+
 /** 持久化状态清洗：旧版本 state.json 没有 usage 字段，损坏数据回落空态。 */
 export function sanitizeUsage(raw: unknown): UsageState {
   const out = emptyUsage()
@@ -84,8 +100,10 @@ export class UsageTracker {
       if (!batchId) return
       this.matched += 1
       const type = (event as { type?: string }).type
+      // 框架把事件 payload 包在 data 里（顶层只有 type/seq 等）；读顶层会永远拿不到 usage（¥0.00 根因之二）。
+      const data = ((event as { data?: unknown }).data ?? event) as Record<string, unknown>
       if (type === 'request/header') {
-        const config = (event as { header?: { config?: { provider?: unknown; model?: unknown } } }).header?.config
+        const config = (data.header as { config?: { provider?: unknown; model?: unknown } } | undefined)?.config
         if (config && typeof config.model === 'string') {
           this.models.set(sid, {
             provider: typeof config.provider === 'string' ? config.provider : undefined,
@@ -93,7 +111,7 @@ export class UsageTracker {
           })
         }
       } else if (type === 'assistant/message') {
-        const usage = (event as { usage?: { inputTokens?: unknown; outputTokens?: unknown; cacheReadTokens?: unknown; reasoningTokens?: unknown } }).usage
+        const usage = usageOf(data)
         if (!usage || typeof usage.inputTokens !== 'number' || typeof usage.outputTokens !== 'number') return
         this.record(sid, batchId, {
           inputTokens: usage.inputTokens,

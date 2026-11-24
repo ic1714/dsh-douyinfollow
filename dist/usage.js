@@ -10,6 +10,21 @@ function dateKey(ts) {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+/** 与官方 dsh-token-meter usageOf 同源：payload 在 event.data 里；usage 缺失时回退 stream 末个 usage chunk。 */
+function usageOf(data) {
+    const direct = data.usage;
+    if (direct && typeof direct === 'object')
+        return direct;
+    const stream = data.stream;
+    if (Array.isArray(stream)) {
+        for (let i = stream.length - 1; i >= 0; i--) {
+            const rec = stream[i];
+            if (rec?.type === 'chunk' && rec.chunk?.type === 'usage')
+                return rec.chunk.usage;
+        }
+    }
+    return undefined;
+}
 /** 持久化状态清洗：旧版本 state.json 没有 usage 字段，损坏数据回落空态。 */
 export function sanitizeUsage(raw) {
     const out = emptyUsage();
@@ -76,8 +91,10 @@ export class UsageTracker {
                 return;
             this.matched += 1;
             const type = event.type;
+            // 框架把事件 payload 包在 data 里（顶层只有 type/seq 等）；读顶层会永远拿不到 usage（¥0.00 根因之二）。
+            const data = (event.data ?? event);
             if (type === 'request/header') {
-                const config = event.header?.config;
+                const config = data.header?.config;
                 if (config && typeof config.model === 'string') {
                     this.models.set(sid, {
                         provider: typeof config.provider === 'string' ? config.provider : undefined,
@@ -86,7 +103,7 @@ export class UsageTracker {
                 }
             }
             else if (type === 'assistant/message') {
-                const usage = event.usage;
+                const usage = usageOf(data);
                 if (!usage || typeof usage.inputTokens !== 'number' || typeof usage.outputTokens !== 'number')
                     return;
                 this.record(sid, batchId, {
