@@ -1,0 +1,60 @@
+name: Retag10
+
+# 一次性探针：提交信息带 [retag10] 标记的 main 推送触发。
+# 测量 git/refs POST、releases POST（带/不带 target_commitish）、releases PATCH 的真实返回码，定位 403 边界。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  retag10:
+    if: ${{ contains(github.event.head_commit.message, '[retag10]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe write endpoints
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+            AUTH="Authorization: Bearer $GH_TOKEN"
+            SHA="9c21fa0ba61af0320f0a195a5f4f039bce13dd9c"
+            ca=$(curl -s --max-time 30 -o /tmp/a.json -w '%{http_code}' -X POST -H "$AUTH" "$API/git/refs" -d "{\"ref\":\"refs/tags/probe-a\",\"sha\":\"$SHA\"}")
+            echo "A_post_ref=$ca"; cat /tmp/a.json; echo
+            cb=$(curl -s --max-time 30 -o /tmp/b.json -w '%{http_code}' -X POST -H "$AUTH" "$API/releases" -d '{"tag_name":"probe-b","draft":true}')
+            echo "B_post_release_notarget=$cb"; cat /tmp/b.json; echo
+            cc=$(curl -s --max-time 30 -o /tmp/c.json -w '%{http_code}' -X POST -H "$AUTH" "$API/releases" -d "{\"tag_name\":\"probe-c\",\"draft\":true,\"target_commitish\":\"$SHA\"}")
+            echo "C_post_release_target=$cc"; cat /tmp/c.json; echo
+            rels=$(curl -s --max-time 30 -H "$AUTH" "$API/releases?per_page=100")
+            rid12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
+            body12=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .body')
+            cd=$(curl -s --max-time 30 -o /tmp/d.json -w '%{http_code}' -X PATCH -H "$AUTH" "$API/releases/$rid12" -d "{\"body\":$(jq -cn --arg b "$body12" '$b')}")
+            echo "D_patch_release_body=$cd"; cat /tmp/d.json; echo
+            for t in probe-a probe-b probe-c; do
+              curl -s --max-time 30 -o /dev/null -w "del_ref_$t=%{http_code}\n" -X DELETE -H "$AUTH" "$API/git/refs/tags/$t"
+            done
+            printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="probe-b" or .tag_name=="probe-c") | .id' | while IFS= read -r rid; do
+              curl -s --max-time 30 -o /dev/null -w "del_release_$rid=%{http_code}\n" -X DELETE -H "$AUTH" "$API/releases/$rid"
+            done
+            cb2=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="probe-b") | .id' | head -1)
+            cc2=$(printf '%s' "$rels" | jq -r '.[] | select(.tag_name=="probe-c") | .id' | head -1)
+            for rid in $cb2 $cc2; do
+              [ -n "$rid" ] && curl -s --max-time 30 -o /dev/null -w "del_release_$rid=%{http_code}\n" -X DELETE -H "$AUTH" "$API/releases/$rid"
+            done
+          } 2>&1 | tee dbg2.txt
+          rid12=$(curl -s --max-time 30 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r '.[] | select(.tag_name=="0.2.2_v1.2") | .id' | head -1)
+          curl -s --max-time 30 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$rid12/assets" | jq -r '.[] | select(.name=="debug-retag10.txt") | .id' | while IFS= read -r aid; do
+            curl -s --max-time 30 -o /dev/null -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$aid"
+          done
+          curl -s --max-time 30 -o /dev/null -w 'dbgupload=%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: text/plain" \
+            --data-binary @dbg2.txt \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid12/assets?name=debug-retag10.txt"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dbg2.txt
+          git commit -m "debug: retag10 探针留档 [retag10done]" --quiet
+          git push origin main || true
