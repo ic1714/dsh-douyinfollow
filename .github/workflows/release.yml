@@ -1,0 +1,81 @@
+name: Release
+
+# 推 tag：为该 tag 构建并发布 Release（tag 的 annotated 说明即 Release 正文）。
+# 推 main：补发尚无 Release 的 tag（用于历史版本补隔离 / 发版失败自愈）。
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.plan.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tags=$(jq -cn --arg t "$GITHUB_REF_NAME" '[$t]')
+          else
+            have=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r '.[].tag_name')
+            miss=()
+            while IFS= read -r t; do
+              [ -n "$t" ] || continue
+              if ! printf '%s\n' "$have" | grep -qx "$t"; then miss+=("$t"); fi
+            done < <(git tag -l | sort)
+            tags=$(jq -cn --args '$ARGS.positional' "${miss[@]}")
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "will release: $tags"
+
+  release:
+    needs: plan
+    if: ${{ needs.plan.outputs.tags != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.tag }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm smoke
+      - run: pnpm pack
+      - name: Release notes from tag annotation
+        run: |
+          git tag -l --format='%(contents)' "${{ matrix.tag }}" > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "详见仓库提交历史与 README。" > "$RUNNER_TEMP/notes.md"
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.tag }}
+          name: ${{ matrix.tag }}
+          body_path: ${{ runner.temp }}/notes.md
+          files: douyinfollow-*.tgz
+          fail_on_unmatched_files: true
+          prerelease: false

@@ -66,7 +66,7 @@
 
 1. 获取插件（任选其一）：
    - 在本仓库 GitHub 页面点 Code → Download ZIP，解压，记住含 `package.json` 的那层文件夹路径；
-   - 或下载仓库根目录的 `.tgz` 安装包（当前为 `douyinfollow-0.2.2-v.2.tgz`，对外标签 `0.2.2_v2`）；
+   - 或到 [Releases](https://github.com/ic1714/dsh-douyinfollow/releases) 下载对应版本的 `.tgz` 安装包（最新标签 `0.2.2_v2`，包内版本 `0.2.2-v.2`；旧版本同页取）；
    - 或开发者直接 clone 本仓库。
 2. 打开 DSH 桌面端 → 左栏「插件」→「+ 添加插件」。
 3. 粘贴插件目录的绝对路径（或 `.tgz` 路径）→「安装」→「立即启用」→ 确认开关为 ON。
@@ -79,7 +79,7 @@
 dsh plugin --profile web add github:ic1714/dsh-douyinfollow
 # 或本地目录（ZIP 解压 / clone 后的路径）
 dsh plugin --profile web add /path/to/douyinfollow
-# 或预构建 tarball
+# 或预构建 tarball（从 Releases 页下载对应版本）
 dsh plugin --profile web add ./douyinfollow-0.2.2-v.2.tgz
 ```
 
@@ -201,6 +201,8 @@ pnpm pack            # 生成可安装的 .tgz（打包前自动重新构建）
 修改 `src/` 后请执行 `pnpm build`，并把更新后的 `dist/` 随源码一并提交，保证 github: / ZIP 安装的用户直接拿到新版本。
 
 **版本号规范**：DSH 兼容版本 + 插件迭代号。npm 包版本须为合法 semver，写作 `0.2.2-v.2`（预发布格式，数字段保证 v2 < v3 < … < v10 排序正确）；对外标签 / git tag 用 `0.2.2_v2`。每次插件发版迭代号 +1；DSH 升到 0.3 后从 `0.3.0-v.1` 重新计。
+
+**发布与版本隔离**：仓库只提交源码与 `dist/`，安装包不入库；每个版本一个 git tag，`.tgz` 挂在该 tag 的 [GitHub Release](https://github.com/ic1714/dsh-douyinfollow/releases) 附件里，旧版本去 Releases 页取，根目录不再堆安装包。发版流程：改 `package.json` 版本 → `pnpm build` + `pnpm smoke` → 源码与 `dist/` 提交推送 → 打**带发布说明的 annotated tag**（`git tag -a 0.2.2_v3 -m "本次改动…"`)→ 推 tag；`.github/workflows/release.yml` 自动构建 + smoke + pack + 发 Release（tag 说明即 Release 正文）。推 main 时会自动补发尚无 Release 的 tag。本地 `pnpm pack` 产物已被 gitignore，仅供本机安装。
 
 目录：`src/index.ts` 入口；`config/store/idle/browser/ocr/engine/tools/routes` 宿主各层；`schedule.ts` 时间段与峰谷判定；`pricing.ts` 价格表与计价；`usage.ts` 用量归属与花费统计；`src/client/index.ts` 侧栏面板；`cordis.patch.yml` 组合补丁；`scripts/build-client.mjs` 客户端打包。
 
