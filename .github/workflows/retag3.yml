@@ -1,0 +1,83 @@
+name: Retag3
+
+# 一次性修复：提交信息带 [retag3] 标记的 main 推送触发。
+# 背景：误把「只留最初版+最新版」当长期政策，v1.2 发版时 CI 删掉了 v1.1。
+# 本工作流等 v1.2 发版完成后，把 v1.1 的 tag 与 Release（含原版本安装包）补回；历史版本此后正常累积。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  retag3:
+    if: ${{ contains(github.event.head_commit.message, '[retag3]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Wait for v1.2 release to settle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GH_TOKEN"
+          for i in $(seq 1 36); do
+            has12=$(curl -sf -H "$AUTH" "$API/releases/tags/0.2.2_v1.2" | jq -r .id || true)
+            tag11=$(curl -sf -H "$AUTH" "$API/git/ref/tags/0.2.2_v1.1" | jq -r .ref || true)
+            if [ -n "${has12:-}" ] && [ "$has12" != "null" ] && [ -z "${tag11:-}" ]; then
+              echo "v1.2 settled and v1.1 removed; restoring"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "wait timeout" >&2
+          exit 1
+      - name: Rebuild v1.1 package from its commit
+        run: |
+          set -euo pipefail
+          git worktree add "$RUNNER_TEMP/v11" 9c21fa0
+          cd "$RUNNER_TEMP/v11"
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm smoke
+          pnpm pack
+      - name: Restore v1.1 tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GH_TOKEN"
+          rid=$(curl -sf -H "$AUTH" "$API/releases/tags/0.2.2_v1.1" | jq -r .id || true)
+          if [ -n "${rid:-}" ] && [ "$rid" != "null" ]; then
+            echo "v1.1 release already present; nothing to do"
+            exit 0
+          fi
+          curl -sf -X POST -H "$AUTH" "$API/git/refs" -d '{"ref":"refs/tags/0.2.2_v1.1","sha":"9c21fa0"}' || true
+          cat > notes-v1.1.md <<'EOF'
+          新增功能：
+          1. 跟进时间段：全天 / 谷时·半价 / 峰时 / 自定义跨午夜窗口，只约束自动跟进，手动不受限
+          2. 花费统计：核实会话 token 精确入账，按 DeepSeek 官方峰谷牌价计价；今日/近7天/累计、批次明细、卡片批次花费；新工具 douyin_follow_usage
+          3. 事件诊断计数（收到/归属/入账），面板花费区与 douyin_follow_usage 可查
+          4. 跟进结果显性化：无新线索时标明原因（均看过/搜索无结果）并附去重说明
+          修改了已知的bug：
+          1. 过验证卡死：关窗/取消立即结束并可重试；导航与重载改后台，不再被卡加载的落地页拖住
+          2. 花费统计与空闲检测收不到会话事件（作用域路由过滤），监听改 global 注册
+          3. 文案旧词「巡查」统一为「跟进 / 搜索」
+          EOF
+          rid=$(curl -sf -X POST -H "$AUTH" "$API/releases" \
+            -d "{\"tag_name\":\"0.2.2_v1.1\",\"name\":\"0.2.2_v1.1\",\"prerelease\":false,\"draft\":false,\"make_latest\":\"false\",\"body\":$(jq -Rs . < notes-v1.1.md)}" | jq -r .id)
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/gzip" --data-binary @"$RUNNER_TEMP/v11/douyinfollow-0.2.2-v.1.1.tgz" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid/assets?name=douyinfollow-0.2.2-v.1.1.tgz"
+          echo "restored v1.1 release $rid"

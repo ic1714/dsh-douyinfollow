@@ -206,7 +206,7 @@ pnpm pack            # 生成可安装的 .tgz（打包前自动重新构建）
 
 **版本号规范**：DSH 兼容基线 + 产品版本（自 v1.0 起递增：最初版 v1.0、当前 v1.2）。npm 包版本须为合法 semver，写作 `0.2.2-v.1.2`（基线 0.2.2 + `-v.` + 产品版本）；对外标签 / git tag 用 `0.2.2_v1.2`。DSH 升基线后前缀随之变化（如 `0.3.0-v.1.3`），产品版本继续递增不回 reset。**发版须维护者明确要求**，日常修改只本地提交、不推送不升版本；确认更新时一并推送并发版。更新说明统一写编号列表：「新增功能：1.… 2.… 」＋「修改了已知的bug：1.… 2.… 」。
 
-**发布与版本隔离**：仓库只提交源码与 `dist/`，安装包不入库；[Releases](https://github.com/ic1714/dsh-douyinfollow/releases) **只保留最初版 `0.2.2_v1.0` 与最新版**两个条目，发新版时自动替换上一最新版（tag 同步清理）。发版流程（须维护者明确要求）：改 `package.json` 版本 → `pnpm build` + `pnpm smoke` → 源码与 `dist/` 提交推送 → 打**带发布说明的 annotated tag**（`git tag -a 0.2.2_v1.3 -m "新增功能：…"`)→ 推 tag；`.github/workflows/release.yml` 自动构建 + smoke + pack + 发 Release（tag 说明即 Release 正文）并清理旧最新版。推 main 时会自动补发尚无 Release 的 tag。本地 `pnpm pack` 产物已被 gitignore，仅供本机安装。
+**发布与版本隔离**：仓库只提交源码与 `dist/`，安装包不入库；[Releases](https://github.com/ic1714/dsh-douyinfollow/releases) 历史版本正常累积保留（`0.2.2_v1.0` 起逐版递增；2026-11-24 曾一次性合并整理为最初版+最新版两个条目，此后恢复正常累积）。发版流程（须维护者明确要求）：改 `package.json` 版本 → `pnpm build` + `pnpm smoke` → 源码与 `dist/` 提交推送 → 打**带发布说明的 annotated tag**（`git tag -a 0.2.2_v1.3 -m "新增功能：…"`)→ 推 tag；`.github/workflows/release.yml` 自动构建 + smoke + pack + 发 Release（tag 说明即 Release 正文）。推 main 时会自动补发尚无 Release 的 tag。本地 `pnpm pack` 产物已被 gitignore，仅供本机安装。
 
 目录：`src/index.ts` 入口；`config/store/idle/browser/ocr/engine/tools/routes` 宿主各层；`schedule.ts` 时间段与峰谷判定；`pricing.ts` 价格表与计价；`usage.ts` 用量归属与花费统计；`src/client/index.ts` 侧栏面板；`cordis.patch.yml` 组合补丁；`scripts/build-client.mjs` 客户端打包。
 
