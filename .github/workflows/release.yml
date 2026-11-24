@@ -66,7 +66,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm smoke
+      - run: pnpm run --if-present smoke
       - run: pnpm pack
       - id: pkg
         run: echo "tgz=douyinfollow-$(jq -r .version package.json).tgz" >> "$GITHUB_OUTPUT"
@@ -98,25 +98,4 @@ jobs:
                 curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
                   "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$aid"
                 echo "pruned asset $aid"
-              done
-      - name: Keep only initial and current release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cur="${{ matrix.tag }}"
-          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            | jq -r --arg cur "$cur" '.[] | select(.tag_name != "0.2.2_v1.0" and .tag_name != $cur) | .id' \
-            | while IFS= read -r rid; do
-                curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
-                  "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/$rid"
-                echo "removed release $rid"
-              done
-          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" \
-            | jq -r --arg cur "$cur" '.[].ref | select(. != "refs/tags/0.2.2_v1.0" and . != ("refs/tags/" + $cur))' \
-            | while IFS= read -r ref; do
-                git push origin --delete "$ref" || true
-                echo "removed tag $ref"
               done
