@@ -84,6 +84,9 @@ export function registerRoutes(ctx: Context, engine: FollowEngine): () => void {
           case 'humanDone':
             sendJson(res, 200, engine.confirmHumanCheck())
             return
+          case 'humanCancel':
+            sendJson(res, 200, engine.cancelHumanCheck())
+            return
           case 'refreshLogin':
             sendJson(res, 200, { loggedIn: await engine.refreshLogin() })
             return

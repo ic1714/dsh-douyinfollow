@@ -37,6 +37,7 @@ export class DouyinBrowser {
     checkingHuman = false;
     humanError;
     humanConfirm = false;
+    humanCancel = false;
     foregroundHwnd = 0;
     constructor(opts) {
         this.opts = opts;
@@ -344,12 +345,17 @@ export class DouyinBrowser {
         this.checkingHuman = true;
         this.humanError = undefined;
         this.humanConfirm = false;
+        this.humanCancel = false;
         this.humanWaiter = (async () => {
             let ok = false;
+            let closedEarly = false;
             try {
                 const ctx = await this.ensure(false);
+                ctx.once('close', () => { closedEarly = true; });
                 const page = await ctx.newPage();
-                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                // 导航放后台：抖音落地页卡加载时同步 goto 会拖满 60s，期间窗口不置前台、判定循环不跑，
+                // 面板看起来就是「卡住加载」；改后台导航后立即置前台、立即起循环，空页/错误页由循环重载/回首页兜底。
+                void page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => undefined);
                 // 用户主动过验证：恢复最小化并置前台居中，方便完成滑块/点选。
                 await this.show();
                 const deadline = Date.now() + this.opts.loginTimeoutSeconds * 1000;
@@ -359,12 +365,23 @@ export class DouyinBrowser {
                 let reloads = 0;
                 let homeTried = false;
                 while (Date.now() < deadline) {
+                    if (this.humanCancel) {
+                        this.humanError = '已取消验证：可重新点「过验证」再开窗口';
+                        return false;
+                    }
+                    // 窗口被关（用户手动关窗/浏览器崩溃）：立即结束并提示重试，
+                    // 不对空标签列表空转到超时——旧版在这里卡满 3 分钟且面板按钮全无响应。
+                    const pages = ctx.pages().filter(p => !p.isClosed());
+                    if (closedEarly || pages.length === 0) {
+                        closedEarly = true;
+                        break;
+                    }
                     // 信任恢复判定：扫描所有标签（验证可能在弹窗标签完成），任一标签无可见验证码
                     // 且（有视频链接 或 已登录且页面有实质内容）即累计；用户点「我已完成验证」后放宽为无可见验证码即可。
                     const logged = await this.loggedInCookies(ctx).catch(() => false);
                     let clean = false;
-                    for (const p of ctx.pages()) {
-                        if (p.isClosed() || await this.captchaHit(p))
+                    for (const p of pages) {
+                        if (await this.captchaHit(p))
                             continue;
                         const n = await p.locator('a[href*="/video/"]').count().catch(() => 0);
                         const bodyLen = await p.evaluate(() => (document.body?.innerText || '').length).catch(() => 0);
@@ -373,16 +390,17 @@ export class DouyinBrowser {
                             break;
                         }
                         // 502/空页等错误落地页：信任 cookie 已落盘但边缘仍拒旧响应，限频重载让信任态生效。
+                        // 重载同样放后台：页面卡死时同步等待会把判定循环（含关窗检测）拖住最多 30s。
                         if (bodyLen < 50 && reloads < 8 && Date.now() - lastReload > 15000) {
                             lastReload = Date.now();
                             reloads += 1;
-                            await p.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
+                            void p.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
                         }
                     }
                     // 搜索页持续报错时回首页确认信任态（首页有实质内容即视为过验证成功）。
                     if (!clean && !homeTried && Date.now() - startedAt > 20000 && !(await this.captchaHit(page))) {
                         homeTried = true;
-                        await page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
+                        void page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined);
                     }
                     if (clean)
                         stable += 1;
@@ -394,6 +412,10 @@ export class DouyinBrowser {
                     }
                     await sleep(2000);
                 }
+                if (closedEarly) {
+                    this.humanError = '验证窗口被关闭：本次验证未完成。若已在网页完成滑块，可直接点「立即跟进」重试；否则重新点「过验证」';
+                    return false;
+                }
                 this.humanError = '验证超时：未等到搜索结果页，请重试';
                 return false;
             }
@@ -404,6 +426,7 @@ export class DouyinBrowser {
             finally {
                 this.checkingHuman = false;
                 this.humanConfirm = false;
+                this.humanCancel = false;
                 // 成功则保留会话供跟进复用（风控信任态绑定会话）；失败才关窗。
                 if (ok) {
                     await this.quietBounds();
@@ -420,6 +443,11 @@ export class DouyinBrowser {
     confirmHuman() {
         if (this.checkingHuman)
             this.humanConfirm = true;
+    }
+    /** 面板「取消验证」：立即结束本次验证并关窗，按钮恢复可重试，不等超时。 */
+    cancelHuman() {
+        if (this.checkingHuman)
+            this.humanCancel = true;
     }
     /** 搜索话题视频，返回去重前的候选列表。 */
     async search(keyword, limit) {

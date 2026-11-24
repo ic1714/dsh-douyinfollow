@@ -102,6 +102,11 @@ export class FollowEngine {
         this.browser.confirmHuman();
         return { confirmed: this.browser.checkingHuman };
     }
+    /** 面板「取消验证」：立即结束并关窗，按钮恢复可重试。 */
+    cancelHumanCheck() {
+        this.browser.cancelHuman();
+        return { cancelled: this.browser.checkingHuman };
+    }
     async tick() {
         if (this.disposed || this.running)
             return;

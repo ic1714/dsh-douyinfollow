@@ -66,7 +66,7 @@
 
 1. 获取插件（任选其一）：
    - 在本仓库 GitHub 页面点 Code → Download ZIP，解压，记住含 `package.json` 的那层文件夹路径；
-   - 或到 [Releases](https://github.com/ic1714/dsh-douyinfollow/releases) 下载对应版本的 `.tgz` 安装包（最新标签 `0.2.2_v2`，包内版本 `0.2.2-v.2`；旧版本同页取）；
+   - 或到 [Releases](https://github.com/ic1714/dsh-douyinfollow/releases) 下载对应版本的 `.tgz` 安装包（最新标签 `0.2.2_v3`，包内版本 `0.2.2-v.3`；旧版本同页取）；
    - 或开发者直接 clone 本仓库。
 2. 打开 DSH 桌面端 → 左栏「插件」→「+ 添加插件」。
 3. 粘贴插件目录的绝对路径（或 `.tgz` 路径）→「安装」→「立即启用」→ 确认开关为 ON。
@@ -80,7 +80,7 @@ dsh plugin --profile web add github:ic1714/dsh-douyinfollow
 # 或本地目录（ZIP 解压 / clone 后的路径）
 dsh plugin --profile web add /path/to/douyinfollow
 # 或预构建 tarball（从 Releases 页下载对应版本）
-dsh plugin --profile web add ./douyinfollow-0.2.2-v.2.tgz
+dsh plugin --profile web add ./douyinfollow-0.2.2-v.3.tgz
 ```
 
 ## 首次使用
@@ -135,6 +135,7 @@ DSH 纯按量计费，本插件把**自己派发的核实会话**的消耗精确
 - 会话保留：登录/过验证成功后**不关窗**，浏览器上下文保留供跟进复用（关窗会丢弃风控信任态）。成功后窗口经 Win32 `ShowWindow(SW_RESTORE)` 恢复最小化（Edge 忽略 CDP 的窗口恢复，`bringToFront` 也救不了最小化窗）→ 缩右下角 460×360 → `HWND_BOTTOM` 置底 + `SWP_NOACTIVATE` → 焦点归还前台。失败才关窗。
 - 用户主动窗口：点「扫码登录」/「过验证」时窗口恢复并居中 1200×800 置前台（需要你本人操作）；判定通过后自动缩角、置底、归还焦点，转回后台跟进形态。
 - 信任态落在 profile：实测跨 DSH 重启存活；但 Edge 崩溃/被强杀后抖音可能重新挑战，需再点一次「过验证」完成点选。
+- **过验证可中断**：点「取消验证」或直接关闭验证窗口都会立即结束本次验证并给出重试提示（旧版关窗后对空标签列表空转到超时，面板按钮卡死无响应）；过验证的导航与重载放后台执行，抖音落地页卡加载不再拖住窗口置前台与判定循环。
 - 登录/过验证等待期间，宿主 tick 与无头切换都会让路，不会把正在扫码/过验证的窗口关掉。
 - **启动零弹窗**：登录态判定直接读 profile 的 Cookies 表（node:sqlite 只读 → 副本 → 名字扫描三级回退），不启动浏览器；实测启动后插件 Edge 进程数为 0。
 - **常驻标签防弹窗**：跟进结束保留一个 about:blank 标签。Edge 关完最后一个标签会退居后台（无窗口），下次跟进再开标签就是一次弹窗打扰；保留常驻标签后窗口始终是启动时摆好的右下角小窗，不再反复弹出。
@@ -185,6 +186,7 @@ DSH 纯按量计费，本插件把**自己派发的核实会话**的消耗精确
 - 验证状态：已在真实桌面端（0.2.2-rc.1）端到端 live 验证（2026-11-21）：entry 激活、tab 注册、面板取数与配置写回、扫码登录、风控识别与人工过验证、有头小窗搜索（found=6）、采集（标题/文案/关键帧 OCR）、Schedule 派发独立核实会话、`douyin_follow_publish` 回写 5 张卡片（含 verified / contradicted / unverified 与权威来源链接、营销话术归类）全链路通过；确定性逻辑通过 `scripts/smoke.mjs` 自测。个别视频页仍可能单独命中风控，该条采集降级记录错误、不影响同批其他视频。
 - 打扰/性能治理验证（2026-11-22）：启动后插件 Edge 进程数 = 0（读盘判定登录态）；跟进期间前台焦点保持在用户应用（不被 Edge 抢走）；「还原页面/意外关闭」崩溃对话框已抑制；最小化窗口经 Win32 恢复后缩角置底。无头/屏外/最小化三种隐藏方式均实测被风控拦截，故保留「有头可见但置底小窗」方案。Edge 崩溃/强杀后风控信任需一次人工过验证恢复。
 - 0.2.2-v.2 / 标签 0.2.2_v2（2026-11-24）：跟进时间段（跨午夜/边界/周末峰谷/下次开窗）、峰谷计价（缓存分桶/价格表覆盖）、用量归属与入账的确定性逻辑全部通过 `scripts/smoke.mjs`；桌面端 live 验证待重启加载新版后进行。
+- 0.2.2-v.3 / 标签 0.2.2_v3（2026-11-24）：修复过验证卡死——关窗/取消立即结束并提示重试、导航与重载改后台不再被卡加载的落地页拖住；确定性逻辑通过 `scripts/smoke.mjs`，桌面端 live 验证待重装后进行。
 - 启动报 `web boot: 1 entry did not activate / douyinfollow: failed` 时：查看 `%APPDATA%\@deepseek-ai\dsh-desktop\logs\crash-*-web-boot.log` 的 renderer console 段，本插件激活失败会打印 `[follow-apply]` 错误栈；也可在崩溃对话框选「禁用第三方插件、备份 profile patch 并重启」先恢复应用。
 
 ## 开发
@@ -200,7 +202,7 @@ pnpm pack            # 生成可安装的 .tgz（打包前自动重新构建）
 
 修改 `src/` 后请执行 `pnpm build`，并把更新后的 `dist/` 随源码一并提交，保证 github: / ZIP 安装的用户直接拿到新版本。
 
-**版本号规范**：DSH 兼容版本 + 插件迭代号。npm 包版本须为合法 semver，写作 `0.2.2-v.2`（预发布格式，数字段保证 v2 < v3 < … < v10 排序正确）；对外标签 / git tag 用 `0.2.2_v2`。每次插件发版迭代号 +1；DSH 升到 0.3 后从 `0.3.0-v.1` 重新计。
+**版本号规范**：DSH 兼容版本 + 插件迭代号。npm 包版本须为合法 semver，写作 `0.2.2-v.3`（预发布格式，数字段保证 v2 < v3 < … < v10 排序正确）；对外标签 / git tag 用 `0.2.2_v3`。每次插件发版迭代号 +1；DSH 升到 0.3 后从 `0.3.0-v.1` 重新计。
 
 **发布与版本隔离**：仓库只提交源码与 `dist/`，安装包不入库；每个版本一个 git tag，`.tgz` 挂在该 tag 的 [GitHub Release](https://github.com/ic1714/dsh-douyinfollow/releases) 附件里，旧版本去 Releases 页取，根目录不再堆安装包。发版流程：改 `package.json` 版本 → `pnpm build` + `pnpm smoke` → 源码与 `dist/` 提交推送 → 打**带发布说明的 annotated tag**（`git tag -a 0.2.2_v3 -m "本次改动…"`)→ 推 tag；`.github/workflows/release.yml` 自动构建 + smoke + pack + 发 Release（tag 说明即 Release 正文）。推 main 时会自动补发尚无 Release 的 tag。本地 `pnpm pack` 产物已被 gitignore，仅供本机安装。
 

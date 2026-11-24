@@ -35,6 +35,7 @@ export declare class DouyinBrowser {
     checkingHuman: boolean;
     humanError?: string;
     private humanConfirm;
+    private humanCancel;
     private foregroundHwnd;
     constructor(opts: BrowserOptions);
     private ensure;
@@ -66,6 +67,8 @@ export declare class DouyinBrowser {
     humanCheck(url: string): Promise<boolean>;
     /** 用户在网页端完成验证后手动确认：下一轮轮询立即放宽判定，避免自动检测漏判时面板卡死。 */
     confirmHuman(): void;
+    /** 面板「取消验证」：立即结束本次验证并关窗，按钮恢复可重试，不等超时。 */
+    cancelHuman(): void;
     /** 搜索话题视频，返回去重前的候选列表。 */
     search(keyword: string, limit: number): Promise<SearchResultItem[]>;
     /** 保留一个常驻标签：Edge 关完最后一个标签会退居后台（无窗口），下次跟进再开就是弹窗打扰。 */

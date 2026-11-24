@@ -50,6 +50,10 @@ export declare class FollowEngine {
     confirmHumanCheck(): {
         confirmed: boolean;
     };
+    /** 面板「取消验证」：立即结束并关窗，按钮恢复可重试。 */
+    cancelHumanCheck(): {
+        cancelled: boolean;
+    };
     private tick;
     /** 前台窗口是否全屏（60 秒缓存，避免每 tick 起进程）；顺带记录前台 hwnd 供归还焦点。 */
     private fgCache?;
