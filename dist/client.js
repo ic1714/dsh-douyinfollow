@@ -381,6 +381,7 @@ function FollowPanel() {
     snap.human.error && h("div", { style: { color: "#f85149", fontSize: 12 } }, snap.human.error),
     snap.human.checking && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u5DF2\u6253\u5F00\u9A8C\u8BC1\u7A97\u53E3\uFF1A\u5982\u51FA\u73B0\u6ED1\u5757/\u70B9\u9009\u8BF7\u5B8C\u6210\u4E00\u6B21\uFF1B\u5B8C\u6210\u540E\u81EA\u52A8\u5224\u5B9A\uFF0C\u4E5F\u53EF\u70B9\u300C\u6211\u5DF2\u5B8C\u6210\u9A8C\u8BC1\u300D\u7ACB\u5373\u590D\u6838\u3002\u70B9\u300C\u53D6\u6D88\u9A8C\u8BC1\u300D\u6216\u76F4\u63A5\u5173\u7A97\u4F1A\u7ACB\u5373\u7ED3\u675F\u672C\u6B21\u9A8C\u8BC1\u3001\u53EF\u9A6C\u4E0A\u91CD\u8BD5\u3002\u5224\u5B9A\u901A\u8FC7\u540E\u7A97\u53E3\u81EA\u52A8\u7F29\u5230\u53F3\u4E0B\u89D2\u5E76\u4FDD\u7559\u4F1A\u8BDD\u4F9B\u8DDF\u8FDB\u590D\u7528\u3002"),
     !snap.human.checking && /验证码/.test(snap.patrol.last?.error ?? "") && h("div", { style: { color: "#d29922", fontSize: 12 } }, "\u4E0A\u6B21\u8DDF\u8FDB\u88AB\u6296\u97F3\u98CE\u63A7\u62E6\u622A\uFF1A\u70B9\u300C\u8FC7\u9A8C\u8BC1\u300D\u4EBA\u5DE5\u5B8C\u6210\u4E00\u6B21\uFF0C\u4E4B\u540E\u81EA\u52A8\u8DDF\u8FDB\u901A\u5E38\u5373\u53EF\u6062\u590D\u3002"),
+    snap.patrol.last && !snap.patrol.last.error && snap.patrol.last.added === 0 && snap.patrol.last.found > 0 && h("div", { style: { opacity: 0.6, fontSize: 12 } }, "\u672C\u6B21\u8DDF\u8FDB\u65E0\u65B0\u7EBF\u7D22\uFF1A\u641C\u7D22\u7ED3\u679C\u90FD\u5DF2\u770B\u8FC7\uFF08\u770B\u8FC7\u7684\u89C6\u9891\u4E0D\u91CD\u590D\u6838\u5B9E\uFF0C\u7701\u82B1\u8D39\uFF09\u3002\u5173\u952E\u8BCD\u4E0B\u51FA\u73B0\u65B0\u89C6\u9891\u65F6\u4F1A\u81EA\u52A8\u6838\u5B9E\u63A8\u9001\uFF1B\u4E5F\u53EF\u5728\u300C\u8BBE\u7F6E\u300D\u91CC\u52A0\u5173\u952E\u8BCD\u6269\u5927\u8986\u76D6\u3002"),
     err && h("div", { style: { color: "#f85149", fontSize: 12 } }, `\u8FDE\u63A5\u5F02\u5E38\uFF1A${err}`),
     snap.leadsPending > 0 && h("div", { style: { opacity: 0.7, fontSize: 12 } }, `${snap.leadsPending} \u6761\u7EBF\u7D22\u6B63\u5728\u6838\u5B9E\u7F16\u6392\u4E2D\u2026`),
     cards.length === 0 && h(
@@ -399,7 +400,7 @@ function FollowPanel() {
     snap.patrol.last && h(
       "div",
       { style: { opacity: 0.55, fontSize: 11, marginTop: 4 } },
-      `\u4E0A\u6B21\u8DDF\u8FDB ${fmtTime(snap.patrol.last.startedAt)}\uFF1A\u53D1\u73B0 ${snap.patrol.last.found} / \u65B0\u589E ${snap.patrol.last.added}` + (snap.patrol.last.error ? ` \xB7 ${snap.patrol.last.error}` : "") + ` \xB7 \u4E0B\u6B21\u6700\u65E9 ${fmtTime(snap.patrol.nextEligibleAt ?? Date.now())}`
+      `\u4E0A\u6B21\u8DDF\u8FDB ${fmtTime(snap.patrol.last.startedAt)}\uFF1A\u53D1\u73B0 ${snap.patrol.last.found} / \u65B0\u589E ${snap.patrol.last.added}` + (snap.patrol.last.error ? ` \xB7 ${snap.patrol.last.error}` : snap.patrol.last.added === 0 ? snap.patrol.last.found > 0 ? " \xB7 \u5747\u770B\u8FC7\uFF0C\u65E0\u65B0\u7EBF\u7D22" : " \xB7 \u641C\u7D22\u65E0\u7ED3\u679C" : "") + ` \xB7 \u4E0B\u6B21\u6700\u65E9 ${fmtTime(snap.patrol.nextEligibleAt ?? Date.now())}`
     )
   );
 }
