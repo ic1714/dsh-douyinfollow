@@ -1,4 +1,4 @@
 node_modules/
-*.tgz
 *.tmp
 # dist/ 构建产物刻意提交进仓库：github: / ZIP 安装的用户无需编译
+# .tgz 安装包刻意提交进仓库：无需发 Releases，直接从仓库根目录下载
